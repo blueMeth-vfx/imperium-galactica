@@ -17,7 +17,11 @@
     return f.ships.caccia * S.caccia.def + f.ships.torpediniera * S.torpediniera.def + f.ships.colonia * S.colonia.def;
   }
 
-  function runAITurn(game) {
+  const isHumanOwner = (game, owner) => owner != null && !game.player(owner).isAI;
+
+  // Turno IA come GENERATORE: si mette in pausa (yield) quando attacca un UMANO,
+  // così l'interfaccia può far difendere il giocatore tirando i propri dadi.
+  function* aiTurnGen(game) {
     const pid = game.currentPlayer;
     const me = game.player(pid);
 
@@ -80,10 +84,20 @@
         const ev = game.stepFleet(f.id, target.q, target.r);
         if (!ev.ok) break;
         if (ev.event === "combat") {
-          if (power(game, f) > fleetDefense(game, game.fleetById(ev.defender)) ) game.resolveFleetCombat(ev.attacker, ev.defender);
-          else break; // rinuncia
+          const def = game.fleetById(ev.defender);
+          if (def && isHumanOwner(game, def.owner)) {
+            // Attacco a un giocatore umano: metti in pausa, lo difenderà lui
+            yield { type: "fleetCombat", attacker: ev.attacker, defender: ev.defender, q: ev.q, r: ev.r };
+          } else if (power(game, f) > fleetDefense(game, def)) {
+            game.resolveFleetCombat(ev.attacker, ev.defender);
+          } else break; // rinuncia
         } else if (ev.event === "planetCombat") {
-          game.resolvePlanetCombat(ev.attacker, ev.q, ev.r, { land: f.carri });
+          const cell = game.cell(ev.q, ev.r);
+          if (isHumanOwner(game, cell.owner)) {
+            yield { type: "planetCombat", attacker: ev.attacker, q: ev.q, r: ev.r, land: f.carri };
+          } else {
+            game.resolvePlanetCombat(ev.attacker, ev.q, ev.r, { land: f.carri });
+          }
         } else if (ev.event === "destroyed") {
           break;
         } else if (ev.event === "moved" && ev.canColonize && f.ships.colonia > 0) {
@@ -105,5 +119,19 @@
     game.advancePhase(); // -> fine turno
   }
 
+  // Driver che esegue tutto il turno IA risolvendo automaticamente ogni combattimento
+  // (usato dalla simulazione e quando non c'è interfaccia che gestisce la difesa umana).
+  function runAITurn(game) {
+    const gen = aiTurnGen(game);
+    let res = gen.next();
+    while (!res.done) {
+      const c = res.value;
+      if (c.type === "fleetCombat") game.resolveFleetCombat(c.attacker, c.defender);
+      else if (c.type === "planetCombat") game.resolvePlanetCombat(c.attacker, c.q, c.r, { land: c.land });
+      res = gen.next();
+    }
+  }
+
+  g.IG.aiTurnGen = aiTurnGen;
   g.IG.runAITurn = runAITurn;
 })(typeof window !== "undefined" ? window : globalThis);

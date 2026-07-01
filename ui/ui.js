@@ -181,7 +181,7 @@
       else if (/costruisce/.test(l)) events.push(["discovery", "🏗️", "🏗️", l]);
       else if (/eliminato/.test(l)) events.push(["malus", "☠️", "☠️", l]);
     }
-    events.slice(0, 5).forEach((e, i) => setTimeout(() => flashBanner(e[0], e[1], e[2], e[3], ""), i * 700));
+    events.slice(0, 6).forEach((e) => flashBanner(e[0], e[1], e[2], e[3], ""));
   }
   // Centra lo scroll della plancia (che ora è più grande della finestra)
   function centerBoard() {
@@ -631,19 +631,44 @@
     }
   }
 
-  // Banner animato in alto al centro (non blocca l'interazione)
+  // Banner degli eventi: mostrati UNO ALLA VOLTA (coda), in basso, senza sovrapporsi.
+  // Con "conferma eventi" attiva, ogni banner richiede un clic su "Ho letto ✓".
+  let confirmEvents = localStorage.getItem("ig_confirmEvents") === "1";
+  const bannerQueue = [];
+  let bannerBusy = false;
   function flashBanner(kind, eyebrow, icon, title, sub) {
+    bannerQueue.push({ kind, eyebrow, icon, title, sub });
+    pumpBanner();
+  }
+  function pumpBanner() {
+    if (bannerBusy || !bannerQueue.length) return;
+    bannerBusy = true;
+    const data = bannerQueue.shift();
     let host = $("bannerHost");
     if (!host) { host = htmlEl("div"); host.id = "bannerHost"; document.body.appendChild(host); }
-    const b = htmlEl("div", "flash-banner " + kind);
+    const b = htmlEl("div", "flash-banner " + data.kind + (confirmEvents ? " confirm" : ""));
     b.innerHTML =
-      '<div class="fb-icon">' + icon + '</div>' +
-      '<div class="fb-text"><div class="fb-eyebrow">' + esc(eyebrow) + '</div>' +
-      '<div class="fb-title">' + esc(title) + '</div>' +
-      (sub ? '<div class="fb-sub">' + esc(sub) + '</div>' : '') + '</div>';
+      '<div class="fb-icon">' + data.icon + '</div>' +
+      '<div class="fb-text"><div class="fb-eyebrow">' + esc(data.eyebrow) + '</div>' +
+      '<div class="fb-title">' + esc(data.title) + '</div>' +
+      (data.sub ? '<div class="fb-sub">' + esc(data.sub) + '</div>' : '') + '</div>';
+    const done = () => { b.classList.remove("show"); setTimeout(() => { try { b.remove(); } catch (e) {} bannerBusy = false; pumpBanner(); }, 300); };
+    if (confirmEvents) {
+      const ok = htmlEl("button", "fb-ok", "Ho letto ✓"); ok.onclick = done; b.appendChild(ok);
+    }
     host.appendChild(b);
     setTimeout(() => b.classList.add("show"), 20);
-    setTimeout(() => { b.classList.remove("show"); setTimeout(() => { try { b.remove(); } catch (e) {} }, 350); }, 2600);
+    if (!confirmEvents) setTimeout(done, 2400);
+  }
+  function toggleConfirmEvents() {
+    confirmEvents = !confirmEvents;
+    localStorage.setItem("ig_confirmEvents", confirmEvents ? "1" : "0");
+    updateConfirmBtn();
+    toast(confirmEvents ? "Conferma eventi attiva: leggi e premi ✓" : "Conferma eventi disattivata");
+  }
+  function updateConfirmBtn() {
+    const btn = $("confirmToggle");
+    if (btn) { btn.textContent = confirmEvents ? "🔔 Eventi: conferma" : "🔕 Eventi: auto"; btn.classList.toggle("on", confirmEvents); }
   }
 
   // ---------------------------------------------------------------- SELEZIONE / AZIONI
@@ -875,7 +900,9 @@
   }
 
   let combatCtx = null;
-  function startInteractiveCombat(kind, ev) {
+  // opts: { mySide: 'A' (attacco, default) | 'B' (difesa), onDone: fn (per riprendere il turno IA) }
+  function startInteractiveCombat(kind, ev, opts) {
+    opts = opts || {};
     const att = game.fleetById(ev.attacker);
     if (kind === "fleet") {
       const def = game.fleetById(ev.defender);
@@ -883,6 +910,7 @@
       combatCtx = { kind: kind, phase: "space", att: att, def: def, ev: ev, uA: uA, uB: uB,
         attName: game.player(att.owner).name, attColor: game.player(att.owner).color,
         defName: game.player(def.owner).name, defColor: game.player(def.owner).color,
+        mySide: opts.mySide || "A", onDone: opts.onDone || null,
         session: game.makeCombatSession(uA, uB, false) };
     } else {
       const cell = game.cell(ev.q, ev.r);
@@ -890,6 +918,7 @@
       combatCtx = { kind: kind, phase: "space", att: att, cell: cell, ev: ev, defFleet: setup.defFleet, uA: setup.uA, uB: setup.uB, land: ev.land,
         attName: game.player(att.owner).name, attColor: game.player(att.owner).color,
         defName: game.player(cell.owner).name + " · " + cell.planet.data.nome, defColor: game.player(cell.owner).color,
+        mySide: opts.mySide || "A", onDone: opts.onDone || null,
         session: game.makeCombatSession(setup.uA, setup.uB, false) };
     }
     combatCtx.session.startRound();
@@ -913,8 +942,9 @@
     body.appendChild(sides);
 
     const r = s.round;
-    const yours = r.aggressorIsA ? r.att : r.def;
-    const enemy = r.aggressorIsA ? r.def : r.att;
+    const iAmAggressor = (r.aggressorIsA === (ctx.mySide === "A")); // sono io ad attaccare in questo round?
+    const yours = iAmAggressor ? r.att : r.def;
+    const enemy = iAmAggressor ? r.def : r.att;
     const whoAtt = r.aggressorIsA ? ctx.attName : ctx.defName;
     const rt = htmlEl("div", "ca-roundtitle"); rt.innerHTML = "🎯 Attacca: <b>" + esc(whoAtt) + "</b>"; body.appendChild(rt);
     const rows = htmlEl("div", "ca-dice-rows");
@@ -922,7 +952,8 @@
     rows.appendChild(diceRow("AVVERSARIO", enemy, false));
     body.appendChild(rows);
 
-    modalWide(ctx.kind === "fleet" ? "⚔ Scontro spaziale" : "⚔ Attacco al pianeta", body);
+    const title = ctx.mySide === "B" ? "🛡 Sei sotto attacco — Difenditi!" : (ctx.kind === "fleet" ? "⚔ Scontro spaziale" : "⚔ Attacco al pianeta");
+    modalWide(title, body);
     const acts = $("modalActions"); acts.innerHTML = "";
     const yoursDone = yours.every((d) => d.die != null), enemyDone = enemy.every((d) => d.die != null);
     if (!yoursDone) {
@@ -966,25 +997,42 @@
     else { combatCtx.session.startRound(); renderCombat(); }
   }
 
+  // Esito mostrato dalla prospettiva giusta (attacco vs difesa)
+  function endDisplay(code) {
+    const def = combatCtx && combatCtx.mySide === "B";
+    const M = {
+      winA: ["VITTORIA", "win", "🛑 FLOTTA PERDUTA", "lose"],
+      winB: ["SCONFITTA", "lose", "🛡 DIFESA RIUSCITA", "win"],
+      draw: ["Inconcludente", "push", "Inconcludente", "push"],
+      attackerDestroyed: ["FLOTTA DISTRUTTA", "lose", "🛡 ATTACCANTE ANNIENTATO", "win"],
+      spaceFailed: ["ATTACCO RESPINTO", "lose", "🛡 ATTACCO RESPINTO", "win"],
+      captured: ["🚩 PIANETA CONQUISTATO", "win", "🛑 PIANETA PERDUTO", "lose"],
+      spaceWonNoCapture: ["DIFESE SUPERATE", "push", "Difese spaziali cadute", "push"],
+      spaceWonNoLand: ["DIFESE A TERRA INTATTE", "push", "🛡 Terra difesa", "win"],
+      groundFailed: ["SBARCO RESPINTO", "lose", "🛡 SBARCO RESPINTO", "win"],
+    };
+    const e = M[code] || ["Esito", "push", "Esito", "push"];
+    return def ? { text: e[2], type: e[3] } : { text: e[0], type: e[1] };
+  }
+
   function combatFinished() {
     const ctx = combatCtx, s = ctx.session, winner = s.winner;
     if (ctx.kind === "fleet") {
       game.applyFleetCombatResult(ctx.att, ctx.def, ctx.uA, ctx.uB, winner);
-      showCombatEnd(winner === "A" ? { text: "VITTORIA", type: "win" } : winner === "B" ? { text: "SCONFITTA", type: "lose" } : { text: "Inconcludente", type: "push" });
-      return;
+      return showCombatEnd(endDisplay(winner === "A" ? "winA" : winner === "B" ? "winB" : "draw"));
     }
     // PIANETA
     if (ctx.phase === "space") {
       const res = game.applyPlanetSpaceResult(ctx.att, ctx.cell, ctx.defFleet, ctx.uA, ctx.uB, winner);
-      if (res.outcome === "attackerDestroyed") return showCombatEnd({ text: "FLOTTA DISTRUTTA", type: "lose" });
-      if (res.outcome === "spaceFailed") return showCombatEnd({ text: "ATTACCO RESPINTO", type: "lose" });
+      if (res.outcome === "attackerDestroyed") return showCombatEnd(endDisplay("attackerDestroyed"));
+      if (res.outcome === "spaceFailed") return showCombatEnd(endDisplay("spaceFailed"));
       // difese spaziali superate
       if (!res.groundDef) {
         const r2 = game.applyPlanetNoGround(ctx.att, ctx.cell, ctx.land);
-        return showCombatEnd(r2.outcome === "captured" ? { text: "🚩 PIANETA CONQUISTATO", type: "win" } : { text: "DIFESE SUPERATE", type: "push" });
+        return showCombatEnd(endDisplay(r2.outcome === "captured" ? "captured" : "spaceWonNoCapture"));
       }
       const landN = Math.min(ctx.att.carri, ctx.land != null ? ctx.land : ctx.att.carri);
-      if (landN <= 0) { game.applyPlanetSkipGround(ctx.att, ctx.cell); return showCombatEnd({ text: "DIFESE A TERRA INTATTE", type: "push" }); }
+      if (landN <= 0) { game.applyPlanetSkipGround(ctx.att, ctx.cell); return showCombatEnd(endDisplay("spaceWonNoLand")); }
       // passa alla lotta di terra (interattiva)
       const gs = game.planetGroundSetup(ctx.cell, landN);
       ctx.landN = landN; ctx.gtA = gs.tA; ctx.gtB = gs.tB; ctx.phase = "ground";
@@ -996,20 +1044,29 @@
       return;
     }
     if (ctx.phase === "ground") {
-      const res = game.applyPlanetGroundResult(ctx.att, ctx.cell, ctx.landN, ctx.gtA, ctx.gtB, winner);
-      return showCombatEnd(res.outcome === "captured" ? { text: "🚩 PIANETA CONQUISTATO", type: "win" } : { text: "SBARCO RESPINTO", type: "lose" });
+      game.applyPlanetGroundResult(ctx.att, ctx.cell, ctx.landN, ctx.gtA, ctx.gtB, winner);
+      return showCombatEnd(endDisplay(winner === "A" ? "captured" : "groundFailed"));
     }
   }
 
   function showCombatEnd(out) {
     const ev = combatCtx ? combatCtx.ev : null;
+    const onDone = combatCtx ? combatCtx.onDone : null;
+    const mySide = combatCtx ? combatCtx.mySide : "A";
     const body = htmlEl("div");
     const ban = htmlEl("div", "outcome-banner " + out.type); ban.textContent = out.text; body.appendChild(ban);
     body.appendChild(htmlEl("p", "muted center", "Premi OK per continuare."));
     modalWide("Esito del combattimento", body);
     const acts = $("modalActions"); acts.innerHTML = "";
     const ok = htmlEl("button", "primary", "OK");
-    ok.onclick = () => { closeModalWide(); sel.fleetId = (ev && game.fleetById(ev.attacker)) ? ev.attacker : null; render(); syncNet(); if (game.winner != null) showWin(); };
+    ok.onclick = () => {
+      closeModalWide();
+      if (mySide === "A") sel.fleetId = (ev && game.fleetById(ev.attacker)) ? ev.attacker : null;
+      render();
+      if (game.winner != null) { showWin(); return; }
+      if (onDone) { onDone(); return; }  // riprende il turno dell'IA dopo la difesa
+      syncNet();                          // online: sincronizza l'esito
+    };
     acts.appendChild(ok);
     combatCtx = null;
   }
@@ -1252,15 +1309,31 @@
     if (p.isAI) {
       aiOverlay(true, p.name, p.color);
       const before = game.log.length;
-      setTimeout(() => {
-        try { IG.runAITurn(game); } catch (e) { console.error(e); toast("Errore IA: " + e.message); }
-        const newLines = game.log.slice(before);
-        sel = { fleetId: null, cellKey: null };
-        render();
-        // mostra gli eventi dell'IA uno alla volta, poi prosegue
-        playAIEvents(newLines, () => { aiOverlay(false); checkTurn(); });
-      }, 1100);
+      setTimeout(() => runAIGen(before, p), 1100);
     }
+  }
+
+  // Esegue il turno IA passo-passo: si ferma quando l'IA attacca un umano, che si difende.
+  function runAIGen(before, aiPlayer) {
+    const gen = IG.aiTurnGen(game);
+    function pump() {
+      let res;
+      try { res = gen.next(); } catch (e) { console.error(e); toast("Errore IA: " + e.message); res = { done: true }; }
+      if (res.done) { finishAITurn(before); return; }
+      const c = res.value; // combattimento contro un umano
+      aiOverlay(false); render();
+      const resume = () => { if (game.winner == null) aiOverlay(true, aiPlayer.name, aiPlayer.color); pump(); };
+      toast("⚠ " + aiPlayer.name + " ti attacca — difenditi!");
+      if (c.type === "fleetCombat") startInteractiveCombat("fleet", { attacker: c.attacker, defender: c.defender, q: c.q, r: c.r }, { mySide: "B", onDone: resume });
+      else startInteractiveCombat("planet", { attacker: c.attacker, q: c.q, r: c.r, land: c.land }, { mySide: "B", onDone: resume });
+    }
+    pump();
+  }
+  function finishAITurn(before) {
+    const newLines = game.log.slice(before);
+    sel = { fleetId: null, cellKey: null };
+    render();
+    playAIEvents(newLines, () => { aiOverlay(false); checkTurn(); });
   }
 
   // Mostra gli eventi rilevanti del turno IA come banner, ritmati
@@ -1275,16 +1348,9 @@
       else if (/costruisce/.test(l)) events.push(["discovery", "🏗️ IA", "🏗️", l]);
       else if (/eliminato/.test(l)) events.push(["malus", "☠️", "☠️", l]);
     }
-    const shown = events.slice(0, 7);
-    let i = 0;
-    function next() {
-      if (i >= shown.length) { setTimeout(done, 300); return; }
-      const e = shown[i++];
-      flashBanner(e[0], e[1], e[2], e[3], "");
-      setTimeout(next, 850);
-    }
-    if (!shown.length) { setTimeout(done, 400); return; }
-    next();
+    // La coda dei banner gestisce ritmo e (eventuale) conferma: accodo tutto e proseguo.
+    events.slice(0, 8).forEach((e) => flashBanner(e[0], e[1], e[2], e[3], ""));
+    setTimeout(done, 400);
   }
 
   function advancePhase() {
@@ -1316,6 +1382,8 @@
     $("startBtn").addEventListener("click", startGame);
     $("advanceBtn").addEventListener("click", advancePhase);
     $("helpBtn").addEventListener("click", showHelp);
+    $("confirmToggle").addEventListener("click", toggleConfirmEvents);
+    updateConfirmBtn();
     initOnlineUI();
   });
 })();
