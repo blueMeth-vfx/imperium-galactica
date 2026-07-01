@@ -102,7 +102,7 @@
     let steps = '<div class="stepper">';
     for (let i = 0; i < PHASE_LABELS.length; i++) {
       const st = i < game.phaseIdx ? "done" : i === game.phaseIdx ? "active" : "todo";
-      steps += '<div class="step ' + st + '"><span class="step-n">' + (i + 1) + '</span>' + PHASE_LABELS[i] + '</div>';
+      steps += '<div class="step ' + st + '"><span class="step-n">' + (i + 1) + '</span><span class="step-label">' + PHASE_LABELS[i] + '</span></div>';
       if (i < PHASE_LABELS.length - 1) steps += '<span class="step-sep"></span>';
     }
     steps += '</div>';

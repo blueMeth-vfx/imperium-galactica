@@ -316,3 +316,61 @@ p.center { text-align: center; }
 @keyframes aispin { 0% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } 100% { transform: rotate(-8deg); } }
 #aiOverlay .ai-card-t { font-size: 11px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-top: 6px; }
 #aiOverlay .ai-card-n { font-size: 22px; font-weight: 800; }
+
+/* ============================================================================
+   RESPONSIVE / MOBILE
+   ============================================================================ */
+/* Tap reattivi (no ritardo 300ms, no zoom su doppio tap) sui controlli */
+button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation; }
+#board { touch-action: pan-x pan-y pinch-zoom; }
+
+/* --- Schermi stretti (telefoni in verticale, tablet piccoli) --- */
+@media (max-width: 860px) {
+  #topbar { flex-wrap: wrap; gap: 6px 10px; padding: 7px 10px; }
+  #turnInfo { font-size: 13px; order: 1; }
+  .top-actions { order: 2; margin-left: auto; }
+  #phaseInfo { order: 3; width: 100%; overflow-x: auto; }
+  .stepper { gap: 3px; }
+  .step { padding: 3px 8px; }
+  .step:not(.active) .step-label { display: none; } /* solo il numero per le fasi non attive */
+  .step.active { padding: 3px 10px; }
+
+  #main { flex-direction: column; }
+  #boardWrap { flex: 1 1 auto; min-height: 46vh; padding: 6px; }
+  #sidebar { width: 100%; flex: 0 0 auto; max-height: 46vh; border-left: none; border-top: 1px solid var(--border-bright); }
+  #sidebar section { padding: 10px 12px; }
+  #selectionPanel { max-height: none; }
+  .res { grid-template-columns: 1fr 1fr 1fr; }
+  .res .pill.money { grid-column: 1 / -1; }
+
+  /* Modali a tutta larghezza */
+  .modal { align-items: flex-end; }
+  .modal-box, .modal-box.wide { width: 100vw; max-width: 100vw; max-height: 88vh; border-radius: 16px 16px 0 0; }
+  .modal-actions button { flex: 1; min-height: 44px; }
+  .cdie .die-face { font-size: 30px; }
+  .ca-sides { gap: 6px; }
+
+  /* Controlli più "toccabili" */
+  button { min-height: 38px; }
+  button.small { min-height: 34px; }
+  .prod-btn { min-height: 44px; }
+}
+
+/* --- Telefoni molto stretti --- */
+@media (max-width: 480px) {
+  .setup-box { width: 94vw; padding: 22px 20px; }
+  .setup-box h1 { font-size: 24px; letter-spacing: 3px; }
+  #sidebar h3 { font-size: 10px; }
+  .res .pill { font-size: 12px; padding: 5px 7px; }
+  .fc-units { flex-wrap: wrap; }
+  #logBody { font-size: 11px; }
+}
+
+/* --- Telefoni in orizzontale (bassi e larghi): plancia a sinistra, pannelli stretti a destra --- */
+@media (max-height: 520px) and (orientation: landscape) {
+  #main { flex-direction: row; }
+  #sidebar { width: 250px; flex: 0 0 250px; max-height: none; border-top: none; border-left: 1px solid var(--border-bright); }
+  #boardWrap { min-height: 0; }
+  #topbar { padding: 4px 8px; }
+  .step-label { display: none; } /* solo numeri per compattezza */
+}
