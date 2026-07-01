@@ -8,7 +8,7 @@
   const Hex = IG.Hex;
   const SVGNS = "http://www.w3.org/2000/svg";
   const HEX_SIZE = 40;
-  const MARGIN = HEX_SIZE + 34; // spazio extra per gli inventari agli angoli
+  const MARGIN = HEX_SIZE + 52; // spazio extra per gli inventari agli angoli (sopra/sotto)
   const SHIP_SCALE = 1.15;      // navi più piccole degli esagoni
 
   let game = null;
@@ -1197,25 +1197,49 @@
   }
 
   // ---------------------------------------------------------------- MERCATO
+  let marketCardCache = {}; // fleetId -> {turn, card, bought} (una carta per turno)
   function openMarket(fleetId) {
     const f = game.fleetById(fleetId); if (!f) return;
-    const card = game.marketDraw();
-    const body = htmlEl("div");
-    body.appendChild(htmlEl("p", null, "Carta pescata: " + card.qta + "× " + (card.unita === "carri" ? "Carri" : CFG.SHIP_NAMES[card.unita]) + " a " + card.prezzo.toLocaleString() + " Ndri."));
-    body.appendChild(htmlEl("h3", null, "Compra/vendi cubi materia"));
-    const cubeRow = htmlEl("div");
-    for (const m of ["carburante", "metallo", "pietra"]) {
-      const row = htmlEl("div", "field-row");
-      row.appendChild(htmlEl("span", null, m + " (hai " + game.player(f.owner).res[m] + ")"));
-      const buy = htmlEl("button", "small", "Compra 1 (" + CFG.PREZZO_ACQUISTO_CUBO + ")"); buy.onclick = () => { game.marketTradeCube(f.owner, m, 1, false); render(); syncNet(); toast("Comprato 1 " + m); };
-      const sell = htmlEl("button", "small", "Vendi 1 (" + CFG.PREZZO_VENDITA_CUBO + ")"); sell.onclick = () => { game.marketTradeCube(f.owner, m, 1, true); render(); syncNet(); toast("Venduto 1 " + m); };
-      row.appendChild(buy); row.appendChild(sell); cubeRow.appendChild(row);
+    let entry = marketCardCache[fleetId];
+    if (!entry || entry.turn !== game.turnNumber) { entry = { turn: game.turnNumber, card: game.marketDraw(), bought: false }; marketCardCache[fleetId] = entry; }
+
+    function refresh() {
+      const p = game.player(f.owner);
+      const card = entry.card;
+      const unitName = card.unita === "carri" ? "Carri" : CFG.SHIP_NAMES[card.unita];
+      const body = htmlEl("div");
+      const moneyLine = htmlEl("div", "info-line"); moneyLine.innerHTML = "💰 Hai <b>" + p.money.toLocaleString() + "</b> Ndri"; body.appendChild(moneyLine);
+      // Carta deal del turno
+      const dealBox = htmlEl("div", "market-deal" + (entry.bought ? " done" : ""));
+      dealBox.innerHTML = '<div class="md-icon">' + (card.unita === "carri" ? "🪖" : (UNIT_ICON[card.unita] || "🚀")) + "</div>" +
+        '<div class="md-info"><div class="md-title">' + card.qta + "× " + esc(unitName) + "</div>" +
+        '<div class="md-price">' + card.prezzo.toLocaleString() + " Ndri</div></div>";
+      body.appendChild(dealBox);
+      if (entry.bought) body.appendChild(htmlEl("div", "info-line", "✓ Deal già acquistato questo turno."));
+      else if (p.money < card.prezzo) body.appendChild(htmlEl("div", "info-line", "⚠ Ndri insufficienti per questo deal."));
+
+      body.appendChild(htmlEl("h3", null, "Compra/vendi cubi materia"));
+      for (const m of ["carburante", "metallo", "pietra"]) {
+        const row = htmlEl("div", "field-row");
+        row.appendChild(htmlEl("span", null, m + " (hai " + p.res[m] + ")"));
+        const buy = htmlEl("button", "small", "Compra (" + CFG.PREZZO_ACQUISTO_CUBO / 1000 + "k)"); buy.disabled = p.money < CFG.PREZZO_ACQUISTO_CUBO; buy.onclick = () => { const r = game.marketTradeCube(f.owner, m, 1, false); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); refresh(); };
+        const sell = htmlEl("button", "small", "Vendi (" + CFG.PREZZO_VENDITA_CUBO / 1000 + "k)"); sell.disabled = p.res[m] < 1; sell.onclick = () => { const r = game.marketTradeCube(f.owner, m, 1, true); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); refresh(); };
+        row.appendChild(buy); row.appendChild(sell); body.appendChild(row);
+      }
+
+      const actions = [];
+      if (!entry.bought) {
+        actions.push({ label: "🛒 Acquista il deal (" + (card.prezzo / 1000) + "k)", primary: true, onClick: () => {
+          const r = game.marketBuy(fleetId, card);
+          if (!r.ok) { toast("❌ " + r.msg); return; } // NON chiude: mostra il motivo
+          entry.bought = true; render(); syncNet(); flashBanner("bonus", "🛒 Mercato", "🛒", "Acquistati " + card.qta + "× " + unitName, "");
+          refresh();
+        } });
+      }
+      actions.push({ label: "Chiudi", onClick: () => { closeModal(); render(); } });
+      modal("🛒 Mercato", body, actions);
     }
-    body.appendChild(cubeRow);
-    modal("🛒 Mercato", body, [
-      { label: "Acquista la carta", primary: true, onClick: () => { const r = game.marketBuy(fleetId, card); if (!r.ok) toast(r.msg); else { toast("Acquistato!"); syncNet(); } closeModal(); render(); } },
-      { label: "Chiudi", onClick: () => { closeModal(); render(); } },
-    ]);
+    refresh();
   }
 
   // ---------------------------------------------------------------- CASINO

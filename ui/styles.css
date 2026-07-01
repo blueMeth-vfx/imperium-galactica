@@ -232,12 +232,18 @@ button.small { padding: 4px 9px; font-size: 12px; }
 @keyframes pulsering { 0% { opacity: 0; transform: scale(.4); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.15); } }
 
 /* ---------- Banner di scoperta / asteroidi (in alto, non bloccante) ---------- */
-/* Banner eventi: in basso al centro, uno alla volta (non coprono il turno in alto) */
-#bannerHost { position: fixed; bottom: 22px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 60; pointer-events: none; }
+/* Banner eventi: in alto al centro (sotto la barra), UNO alla volta -> mai sovrapposti */
+#bannerHost { position: fixed; top: 58px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 60; pointer-events: none; }
 .flash-banner { display: flex; align-items: center; gap: 14px; min-width: 300px; max-width: 440px; padding: 12px 18px;
   border-radius: 12px; background: linear-gradient(180deg, rgba(18,28,58,.97), rgba(10,16,36,.97)); border: 1px solid var(--border-bright);
-  box-shadow: 0 14px 40px rgba(0,0,0,.55); transform: translateY(22px); opacity: 0; transition: all .32s cubic-bezier(.2,.9,.3,1.2); }
+  box-shadow: 0 14px 40px rgba(0,0,0,.55); transform: translateY(-22px); opacity: 0; transition: all .32s cubic-bezier(.2,.9,.3,1.2); }
 .flash-banner.show { transform: translateY(0); opacity: 1; }
+/* Deal del mercato */
+.market-deal { display: flex; align-items: center; gap: 14px; background: #0b1430; border: 1px solid var(--border-bright); border-radius: 12px; padding: 12px 16px; margin: 10px 0; }
+.market-deal.done { opacity: .5; }
+.market-deal .md-icon { font-size: 34px; }
+.market-deal .md-title { font-size: 17px; font-weight: 800; }
+.market-deal .md-price { font-size: 14px; color: var(--gold); }
 .flash-banner.confirm { pointer-events: auto; min-width: 340px; border-color: var(--gold); box-shadow: 0 0 30px rgba(255,216,107,.25); }
 .flash-banner .fb-ok { margin-left: auto; align-self: center; background: linear-gradient(180deg,#3f86ff,#2f63e6); border-color:#4f90ff; color:#fff; font-weight:700; white-space:nowrap; }
 .flash-banner .fb-icon { font-size: 36px; line-height: 1; filter: drop-shadow(0 0 8px rgba(255,255,255,.25)); }
