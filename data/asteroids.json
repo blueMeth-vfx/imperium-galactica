@@ -1,0 +1,178 @@
+[
+ {
+  "tipo": "malus",
+  "unitaPerse": 0
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 3
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 3
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "pietra",
+  "quantita": 3
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "metallo",
+  "quantita": 3
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 3
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "carburante",
+  "quantita": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "metallo",
+  "quantita": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 2
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "metallo",
+  "quantita": 2
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 2
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "pietra",
+  "quantita": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "soldi",
+  "quantita": 2
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "soldi",
+  "quantita": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 0
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 2
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "carburante",
+  "quantita": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 2
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "pietra",
+  "quantita": 3
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 3
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "pietra",
+  "quantita": 0
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "carburante",
+  "quantita": 2
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "soldi",
+  "quantita": 2
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 0
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 0
+ },
+ {
+  "tipo": "malus",
+  "unitaPerse": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "metallo",
+  "quantita": 3
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "pietra",
+  "quantita": 1
+ },
+ {
+  "tipo": "bonus",
+  "risorsa": "soldi",
+  "quantita": 2
+ }
+]

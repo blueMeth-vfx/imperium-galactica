@@ -1,0 +1,392 @@
+[
+ {
+  "id": 1,
+  "nome": "Pyros",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 2,
+  "nome": "Ignis",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 2,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 3,
+  "nome": "Vulcanis",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 3
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 4,
+  "nome": "Ember",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 3,
+   "pietra": 3
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 5,
+  "nome": "Solara",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 1,
+   "pietra": 3
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 6,
+  "nome": "Cinder",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 7,
+  "nome": "Magmar",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 8,
+  "nome": "Helios",
+  "tipo": "Fuoco",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 3,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 9,
+  "nome": "Glacius",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 1,
+   "pietra": 3
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 10,
+  "nome": "Borealis",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 3,
+   "pietra": 3
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 11,
+  "nome": "Frost",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 1,
+   "pietra": 2
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 12,
+  "nome": "Cryon",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 3,
+   "metallo": 2,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 13,
+  "nome": "Nivalis",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 3,
+   "pietra": 2
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 14,
+  "nome": "Gelo",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 15,
+  "nome": "Hyperion",
+  "tipo": "Ghiaccio",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 2,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 16,
+  "nome": "Gaia",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 17,
+  "nome": "Verdania",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 18,
+  "nome": "Eden",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 19,
+  "nome": "Terranova",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 20,
+  "nome": "Silvana",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 21,
+  "nome": "Arbor",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 3,
+  "soldiTurno": 15000
+ },
+ {
+  "id": 22,
+  "nome": "Pratum",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 23,
+  "nome": "Florae",
+  "tipo": "Terra",
+  "moltMaterie": {
+   "carburante": 2,
+   "metallo": 2,
+   "pietra": 2
+  },
+  "produttivita": 1,
+  "economia": 1,
+  "soldiTurno": 5000
+ },
+ {
+  "id": 24,
+  "nome": "Petra",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 3,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 25,
+  "nome": "Rocca",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 26,
+  "nome": "Silex",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 3,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 27,
+  "nome": "Monolith",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 1,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 28,
+  "nome": "Craggor",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 2,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 29,
+  "nome": "Basalt",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 1,
+  "economia": 2,
+  "soldiTurno": 10000
+ },
+ {
+  "id": 30,
+  "nome": "Saxum",
+  "tipo": "Roccia",
+  "moltMaterie": {
+   "carburante": 1,
+   "metallo": 1,
+   "pietra": 1
+  },
+  "produttivita": 3,
+  "economia": 2,
+  "soldiTurno": 10000
+ }
+]

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imperium Galactica — Gioco da Tavolo</title>
+  <link rel="stylesheet" href="ui/styles.css?v=20" />
+</head>
+<body>
+  <!-- ===================== Schermata di setup ===================== -->
+  <div id="setup" class="screen">
+    <div class="setup-box">
+      <h1>IMPERIUM GALACTICA</h1>
+      <p class="subtitle">Il Gioco da Tavolo — versione digitale</p>
+      <label>Numero di fazioni:
+        <select id="numPlayers">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </label>
+      <div id="playerRows"></div>
+      <label>Seed (opzionale, per partite riproducibili):
+        <input id="seed" type="number" placeholder="casuale" />
+      </label>
+      <button id="startBtn" class="primary">Inizia la partita</button>
+      <p class="hint">Gioco hot-seat sullo stesso PC. Imposta una fazione come "IA" per farla giocare al computer.</p>
+    </div>
+  </div>
+
+  <!-- ===================== Schermata di gioco ===================== -->
+  <div id="game" class="screen hidden">
+    <header id="topbar">
+      <div id="turnInfo"></div>
+      <div id="phaseInfo"></div>
+      <div class="top-actions">
+        <button id="advanceBtn" class="primary">Avanza fase ▸</button>
+        <button id="helpBtn">Regole</button>
+      </div>
+    </header>
+
+    <div id="main">
+      <div id="boardWrap">
+        <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <aside id="sidebar">
+        <section id="playerPanel"></section>
+        <section id="selectionPanel">
+          <h3>Selezione</h3>
+          <div id="selectionBody"><p class="muted">Clicca una flotta o un pianeta.</p></div>
+        </section>
+        <section id="logPanel">
+          <h3>Diario di gioco</h3>
+          <div id="logBody"></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ===================== Modale generica ===================== -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h3 id="modalTitle"></h3>
+      <div id="modalBody"></div>
+      <div id="modalActions" class="modal-actions"></div>
+    </div>
+  </div>
+
+  <!-- Engine (logica pura). Il ?v= forza il refresh dopo gli aggiornamenti. -->
+  <script src="data/gamedata.js?v=20"></script>
+  <script src="engine/config.js?v=20"></script>
+  <script src="engine/hex.js?v=20"></script>
+  <script src="engine/game.js?v=20"></script>
+  <script src="engine/combat.js?v=20"></script>
+  <script src="engine/casino.js?v=20"></script>
+  <script src="engine/market.js?v=20"></script>
+  <script src="engine/ai.js?v=20"></script>
+  <!-- Interfaccia -->
+  <script src="ui/ui.js?v=20"></script>
+</body>
+</html>

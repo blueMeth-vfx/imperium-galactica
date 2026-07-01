@@ -1,0 +1,6 @@
+# Config locale dell'editor / dev server (non serve online)
+.claude/
+
+# File di sistema
+Thumbs.db
+.DS_Store
