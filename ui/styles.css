@@ -374,3 +374,15 @@ button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation;
   #topbar { padding: 4px 8px; }
   .step-label { display: none; } /* solo numeri per compattezza */
 }
+
+/* ---------- Modalità Locale/Online + Lobby ---------- */
+.mode-tabs { display: flex; gap: 8px; margin: 4px 0 16px; }
+.mode-tab { flex: 1; padding: 10px; border-radius: 9px; background: #0a1124; border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
+.mode-tab.active { background: linear-gradient(180deg, #22345f, #16233f); border-color: var(--accent); color: #fff; box-shadow: 0 0 14px rgba(58,120,255,.25); }
+.row-inline { display: flex; gap: 8px; }
+.row-inline input { flex: 1; }
+#lobby { display: flex; align-items: center; justify-content: center; }
+.lobby-player { display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin: 7px 0; background: #0b1430; border: 1px solid #1c294c; border-radius: 9px; font-size: 15px; }
+#lobbyActions { margin-top: 16px; }
+#lobbyActions button { width: 100%; padding: 12px; font-size: 15px; }
+.waiting { color: var(--muted); font-weight: 600; }

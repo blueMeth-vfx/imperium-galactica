@@ -526,6 +526,32 @@
     }
   }
 
+  // --- Serializzazione (per il multiplayer online / salvataggi) ---
+  // Campi di stato "puri" (senza funzioni): tutto ciò che serve a ricostruire la partita.
+  const STATE_KEYS = [
+    "players", "board", "fleets", "fleetSeq", "tileDeck", "planetPool",
+    "asteroidDeck", "asteroidDiscard", "marketDeck", "turnOrder", "startPlayer",
+    "direction", "turnNumber", "orderIdx", "phaseIdx", "currentPlayer", "winner",
+    "log", "lastRiscossione", "casinoSessions",
+  ];
+  Game.prototype.toState = function () {
+    const o = {};
+    for (const k of STATE_KEYS) if (this[k] !== undefined) o[k] = this[k];
+    return JSON.parse(JSON.stringify(o));
+  };
+  // Ricostruisce una partita da uno stato serializzato (senza rieseguire il setup).
+  Game.fromState = function (state, seed) {
+    const g = Object.create(Game.prototype);
+    const data = JSON.parse(JSON.stringify(state));
+    for (const k of STATE_KEYS) g[k] = data[k];
+    if (!g.log) g.log = [];
+    if (!g.casinoSessions) g.casinoSessions = {};
+    // Un RNG locale qualsiasi: la casualità è "consumata" solo da chi è di turno e
+    // finisce comunque nello stato condiviso, quindi non serve sincronizzarlo.
+    g.rng = makeRNG((data.turnNumber || 1) * 7919 + (data.currentPlayer || 0) + 1);
+    return g;
+  };
+
   g.IG.makeRNG = makeRNG;
   g.IG.PHASES = PHASES;
   g.IG.Game = Game;

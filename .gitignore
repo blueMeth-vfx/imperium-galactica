@@ -4,3 +4,8 @@
 # File di sistema
 Thumbs.db
 .DS_Store
+
+# Server / build
+node_modules/
+server/.wrangler/
+.wrangler/

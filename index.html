@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imperium Galactica — Gioco da Tavolo</title>
-  <link rel="stylesheet" href="ui/styles.css?v=21" />
+  <link rel="stylesheet" href="ui/styles.css?v=22" />
 </head>
 <body>
   <!-- ===================== Schermata di setup ===================== -->
@@ -12,19 +12,57 @@
     <div class="setup-box">
       <h1>IMPERIUM GALACTICA</h1>
       <p class="subtitle">Il Gioco da Tavolo — versione digitale</p>
-      <label>Numero di fazioni:
-        <select id="numPlayers">
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-        </select>
-      </label>
-      <div id="playerRows"></div>
-      <label>Seed (opzionale, per partite riproducibili):
-        <input id="seed" type="number" placeholder="casuale" />
-      </label>
-      <button id="startBtn" class="primary">Inizia la partita</button>
-      <p class="hint">Gioco hot-seat sullo stesso PC. Imposta una fazione come "IA" per farla giocare al computer.</p>
+
+      <div class="mode-tabs">
+        <button id="tabLocal" class="mode-tab active">🎮 Locale (hot-seat)</button>
+        <button id="tabOnline" class="mode-tab">🌐 Online</button>
+      </div>
+
+      <!-- Modalità LOCALE -->
+      <div id="localSetup">
+        <label>Numero di fazioni:
+          <select id="numPlayers">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </label>
+        <div id="playerRows"></div>
+        <label>Seed (opzionale, per partite riproducibili):
+          <input id="seed" type="number" placeholder="casuale" />
+        </label>
+        <button id="startBtn" class="primary">Inizia la partita</button>
+        <p class="hint">Hot-seat sullo stesso dispositivo. Imposta una fazione come "IA" per farla giocare al computer.</p>
+      </div>
+
+      <!-- Modalità ONLINE -->
+      <div id="onlineSetup" class="hidden">
+        <label>Il tuo nome:
+          <input id="onName" type="text" placeholder="Es. Matteo" maxlength="24" />
+        </label>
+        <label>Codice stanza (creane uno o incollane uno esistente):
+          <div class="row-inline">
+            <input id="onCode" type="text" placeholder="ABCD" maxlength="8" style="text-transform:uppercase" />
+            <button id="onGen" class="small">Genera</button>
+          </div>
+        </label>
+        <label>Server:
+          <input id="onServer" type="text" placeholder="wss://imperium-mp.tuosub.workers.dev" />
+        </label>
+        <button id="onConnect" class="primary">Entra nella stanza</button>
+        <p id="onStatus" class="hint"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Lobby online ===================== -->
+  <div id="lobby" class="screen hidden">
+    <div class="setup-box">
+      <h1 style="font-size:24px">SALA D'ATTESA</h1>
+      <p class="subtitle">Stanza <b id="lobbyCode"></b> — condividi il codice con gli altri</p>
+      <div id="lobbyRoster"></div>
+      <div id="lobbyActions"></div>
+      <p id="lobbyHint" class="hint"></p>
     </div>
   </div>
 
@@ -68,15 +106,16 @@
   </div>
 
   <!-- Engine (logica pura). Il ?v= forza il refresh dopo gli aggiornamenti. -->
-  <script src="data/gamedata.js?v=21"></script>
-  <script src="engine/config.js?v=21"></script>
-  <script src="engine/hex.js?v=21"></script>
-  <script src="engine/game.js?v=21"></script>
-  <script src="engine/combat.js?v=21"></script>
-  <script src="engine/casino.js?v=21"></script>
-  <script src="engine/market.js?v=21"></script>
-  <script src="engine/ai.js?v=21"></script>
+  <script src="data/gamedata.js?v=22"></script>
+  <script src="engine/config.js?v=22"></script>
+  <script src="engine/hex.js?v=22"></script>
+  <script src="engine/game.js?v=22"></script>
+  <script src="engine/combat.js?v=22"></script>
+  <script src="engine/casino.js?v=22"></script>
+  <script src="engine/market.js?v=22"></script>
+  <script src="engine/ai.js?v=22"></script>
   <!-- Interfaccia -->
-  <script src="ui/ui.js?v=21"></script>
+  <script src="ui/net.js?v=22"></script>
+  <script src="ui/ui.js?v=22"></script>
 </body>
 </html>

@@ -15,6 +15,20 @@
   let sel = { fleetId: null, cellKey: null };
   let moveAnim = null; // {fleetId, fromX, fromY} per animare lo spostamento
 
+  // --- Stato multiplayer online ---
+  let onlineMode = false;    // partita online (via server) vs locale hot-seat
+  let myPlayerId = -1;       // il mio seat/fazione online
+  let applyingRemote = false; // true mentre applico uno stato ricevuto (evita loop di sync)
+  let lastLogLen = 0;        // per mostrare come banner i nuovi eventi ricevuti
+  function isMyTurn() { return !onlineMode || (game && game.currentPlayer === myPlayerId && game.winner == null); }
+  // Puoi comandare ora? (online: solo nel tuo turno; locale: se il giocatore non è IA)
+  function canControl() {
+    if (!game || game.winner != null) return false;
+    if (onlineMode) return game.currentPlayer === myPlayerId;
+    return !game.player(game.currentPlayer).isAI;
+  }
+  function syncNet() { if (onlineMode && !applyingRemote && window.IGNet) { IGNet.pushState(game.toState()); lastLogLen = game.log.length; } }
+
   // ---------------------------------------------------------------- helpers DOM
   const $ = (id) => document.getElementById(id);
   function el(tag, attrs, text) {
@@ -68,12 +82,106 @@
     const opts = { players };
     if (seedVal) opts.seed = parseInt(seedVal, 10);
     game = new IG.Game(opts);
+    onlineMode = false; myPlayerId = -1;
     $("setup").classList.add("hidden");
     $("game").classList.remove("hidden");
     sel = { fleetId: null, cellKey: null };
     render();
     centerBoard();
     checkTurn();
+  }
+
+  // ==================== ONLINE / LOBBY ====================
+  function initOnlineUI() {
+    $("tabLocal").onclick = () => { $("tabLocal").classList.add("active"); $("tabOnline").classList.remove("active"); $("localSetup").classList.remove("hidden"); $("onlineSetup").classList.add("hidden"); };
+    $("tabOnline").onclick = () => { $("tabOnline").classList.add("active"); $("tabLocal").classList.remove("active"); $("onlineSetup").classList.remove("hidden"); $("localSetup").classList.add("hidden"); prefillOnline(); };
+    $("onGen").onclick = () => { $("onCode").value = randomCode(); };
+    $("onConnect").onclick = connectOnline;
+  }
+  function randomCode() { const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 4; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
+  function prefillOnline() {
+    if (!$("onServer").value) $("onServer").value = localStorage.getItem("ig_server") || "";
+    if (!$("onName").value) $("onName").value = localStorage.getItem("ig_name") || "";
+    if (!$("onCode").value) $("onCode").value = randomCode();
+  }
+  function connectOnline() {
+    const name = ($("onName").value || "").trim() || "Giocatore";
+    const code = ($("onCode").value || "").trim().toUpperCase();
+    const server = ($("onServer").value || "").trim();
+    if (!code) { $("onStatus").textContent = "Inserisci un codice stanza."; return; }
+    if (!server) { $("onStatus").textContent = "Inserisci l'indirizzo del server."; return; }
+    localStorage.setItem("ig_server", server); localStorage.setItem("ig_name", name);
+    $("onStatus").textContent = "Connessione…";
+    const N = window.IGNet;
+    N.on("open", () => { $("onStatus").textContent = "Connesso."; });
+    N.on("error", (d) => { $("onStatus").textContent = "⚠ " + ((d && d.msg) || "Errore di connessione."); });
+    N.on("close", () => { if (!onlineMode) $("onStatus").textContent = "Connessione chiusa."; else toast("Disconnesso dal server."); });
+    N.on("welcome", (m) => { if (m.seat < 0) toast("Stanza piena / partita già iniziata: sei spettatore."); enterLobby(); if (m.started && m.state) applyRemoteState(m.state); });
+    N.on("roster", () => renderLobby());
+    N.on("started", (m) => applyRemoteState(m.state));
+    N.on("state", (m) => applyRemoteState(m.state));
+    N.connect(server, code, name);
+  }
+  function enterLobby() {
+    $("setup").classList.add("hidden");
+    $("lobby").classList.remove("hidden");
+    $("lobbyCode").textContent = window.IGNet.code;
+    renderLobby();
+  }
+  function renderLobby() {
+    const N = window.IGNet;
+    const box = $("lobbyRoster"); box.innerHTML = "";
+    (N.roster || []).forEach((pl) => {
+      const row = htmlEl("div", "lobby-player");
+      row.innerHTML = '<span class="dot" style="background:' + CFG.COLORS[pl.seat] + '"></span> <b>' + esc(pl.name) + "</b>" +
+        (pl.seat === N.seat ? ' <span class="tag">tu</span>' : "") + (pl.seat === 0 ? ' <span class="tag">host</span>' : "") +
+        (pl.connected ? "" : ' <span class="muted">(offline)</span>');
+      box.appendChild(row);
+    });
+    const acts = $("lobbyActions"); acts.innerHTML = "";
+    if (N.isHost) {
+      const n = (N.roster || []).length;
+      const b = htmlEl("button", "primary", "Avvia partita (" + n + " giocatori)");
+      b.disabled = n < 2; b.onclick = hostStart; acts.appendChild(b);
+      $("lobbyHint").textContent = n < 2 ? "Servono almeno 2 giocatori (aspetta che entrino con il codice)." : "Sei l'host: avvia quando siete tutti dentro.";
+    } else {
+      $("lobbyHint").textContent = "In attesa che l'host avvii la partita…";
+    }
+  }
+  function hostStart() {
+    const N = window.IGNet;
+    const players = (N.roster || []).map((pl) => ({ name: pl.name, isAI: false }));
+    const g = new IG.Game({ players: players });
+    N.start(g.toState(), players.length); // lo stato torna a tutti via 'started'
+  }
+  function applyRemoteState(state) {
+    if (!state) return;
+    applyingRemote = true;
+    game = IG.Game.fromState(state);
+    onlineMode = true;
+    myPlayerId = window.IGNet.seat;
+    $("setup").classList.add("hidden"); $("lobby").classList.add("hidden"); $("game").classList.remove("hidden");
+    sel = { fleetId: null, cellKey: null };
+    const newLines = game.log.slice(lastLogLen);
+    lastLogLen = game.log.length;
+    render(); centerBoard();
+    applyingRemote = false;
+    showRemoteEvents(newLines);
+    if (game.winner != null) showWin();
+    else if (!isMyTurn()) toast("Turno di " + game.player(game.currentPlayer).name);
+    else toast("È il tuo turno!");
+  }
+  function showRemoteEvents(lines) {
+    const events = [];
+    for (const l of lines) {
+      if (/conquista/.test(l)) events.push(["malus", "⚔️", "🚩", l]);
+      else if (/colonizza/.test(l)) events.push(["discovery", "🛰️", "🪐", l]);
+      else if (/riscuote/.test(l)) events.push(["bonus", "💰", "💰", l]);
+      else if (/produce/.test(l)) events.push(["discovery", "🏭", "🏭", l]);
+      else if (/costruisce/.test(l)) events.push(["discovery", "🏗️", "🏗️", l]);
+      else if (/eliminato/.test(l)) events.push(["malus", "☠️", "☠️", l]);
+    }
+    events.slice(0, 5).forEach((e, i) => setTimeout(() => flashBanner(e[0], e[1], e[2], e[3], ""), i * 700));
   }
   // Centra lo scroll della plancia (che ora è più grande della finestra)
   function centerBoard() {
@@ -107,8 +215,9 @@
     }
     steps += '</div>';
     $("phaseInfo").innerHTML = steps;
-    $("advanceBtn").disabled = !!game.winner || p.isAI;
+    $("advanceBtn").disabled = !canControl();
     $("advanceBtn").textContent = game.phaseIdx >= IG.PHASES.length - 1 ? "Fine turno ▸" : "Avanza fase ▸";
+    if (onlineMode && !isMyTurn() && game.winner == null) $("phaseInfo").innerHTML = '<span class="waiting">⏳ Turno di ' + esc(game.player(game.currentPlayer).name) + '…</span>';
   }
 
   function renderPlayerPanel() {
@@ -446,11 +555,10 @@
   function onCellClick(q, r) {
     if (game.winner) return;
     const p = game.player(game.currentPlayer);
-    if (p.isAI) return;
     const key = Hex.key(q, r);
 
-    // Movimento: se ho una flotta selezionata e clicco una cella adiacente -> passo
-    if (game.phase === "movimento" && sel.fleetId) {
+    // Movimento: se ho una flotta selezionata e clicco una cella adiacente -> passo (solo se posso comandare)
+    if (canControl() && game.phase === "movimento" && sel.fleetId) {
       const f = game.fleetById(sel.fleetId);
       if (f && f.owner === p.id && f.stepsLeft > 0 && reachableSet().has(key)) {
         return doStep(f.id, q, r);
@@ -487,6 +595,7 @@
     // Eventi visivi (banner) e finestre
     if (ev.asteroid) showAsteroidCard(ev.asteroid, ev.event === "destroyed");
     else if (newly && ev.revealed.type !== "space") showDiscoveryCard(ev.revealed);
+    syncNet(); // sincronizza lo spostamento agli altri giocatori online
     if (ev.event === "casino") openCasino(ev.fleet || fleetId);
     else if (ev.canColonize) promptColonize(ev.fleet || fleetId);
   }
@@ -564,7 +673,7 @@
     }
 
     // --- Pianeta proprio: produzione / costruzione ---
-    if (cell.type === "planet" && cell.owner === p.id) {
+    if (cell.type === "planet" && cell.owner === p.id && canControl()) {
       if (game.phase === "produzione") {
         body.appendChild(htmlEl("h3", null, "Produzione"));
         if (cell.buildings.fabbricaNavale > 0) {
@@ -633,22 +742,24 @@
     const grid = htmlEl("div", "action-grid");
     if (!isSel) { const s = htmlEl("button", "small", "Seleziona"); s.onclick = () => { sel.fleetId = f.id; render(); }; grid.appendChild(s); }
 
-    if (game.phase === "movimento" && cell.type === "planet" && cell.owner === null && f.ships.colonia > 0) {
-      const b = htmlEl("button", "small", "Colonizza"); b.onclick = () => { if (game.colonize(f.id).ok) { sel.fleetId = game.fleetById(f.id) ? f.id : null; render(); } }; grid.appendChild(b);
-    }
-    if (cell.type === "market") {
-      const b = htmlEl("button", "small", "🛒 Mercato"); b.onclick = () => openMarket(f.id); grid.appendChild(b);
-    }
-    if (cell.type === "casino") {
-      const b = htmlEl("button", "small", "🎲 Casinò"); b.onclick = () => openCasino(f.id); grid.appendChild(b);
-    }
-    if (cell.type === "planet" && cell.owner === f.owner) {
-      const cap = game.fleetCarriCapacity(f) - f.carri;
-      if (cell.garrison > 0 && cap > 0) { const b = htmlEl("button", "small", "Imbarca carro"); b.onclick = () => act(game.loadTanks(f.id, 1)); grid.appendChild(b); }
-      if (f.carri > 0) { const b = htmlEl("button", "small", "Sbarca carro"); b.onclick = () => act(game.unloadTanks(f.id, 1)); grid.appendChild(b); }
-    }
-    if (game.phase === "movimento") {
-      const sp = htmlEl("button", "small", "Dividi flotta"); sp.onclick = () => openSplit(f.id); grid.appendChild(sp);
+    if (canControl()) {
+      if (game.phase === "movimento" && cell.type === "planet" && cell.owner === null && f.ships.colonia > 0) {
+        const b = htmlEl("button", "small", "Colonizza"); b.onclick = () => { if (game.colonize(f.id).ok) { sel.fleetId = game.fleetById(f.id) ? f.id : null; render(); syncNet(); } }; grid.appendChild(b);
+      }
+      if (cell.type === "market") {
+        const b = htmlEl("button", "small", "🛒 Mercato"); b.onclick = () => openMarket(f.id); grid.appendChild(b);
+      }
+      if (cell.type === "casino") {
+        const b = htmlEl("button", "small", "🎲 Casinò"); b.onclick = () => openCasino(f.id); grid.appendChild(b);
+      }
+      if (cell.type === "planet" && cell.owner === f.owner) {
+        const cap = game.fleetCarriCapacity(f) - f.carri;
+        if (cell.garrison > 0 && cap > 0) { const b = htmlEl("button", "small", "Imbarca carro"); b.onclick = () => act(game.loadTanks(f.id, 1)); grid.appendChild(b); }
+        if (f.carri > 0) { const b = htmlEl("button", "small", "Sbarca carro"); b.onclick = () => act(game.unloadTanks(f.id, 1)); grid.appendChild(b); }
+      }
+      if (game.phase === "movimento") {
+        const sp = htmlEl("button", "small", "Dividi flotta"); sp.onclick = () => openSplit(f.id); grid.appendChild(sp);
+      }
     }
     wrap.appendChild(grid);
     body.appendChild(wrap);
@@ -658,6 +769,7 @@
     if (!result.ok) { toast(result.msg || "Azione non valida."); return; }
     if (okMsg) toast(okMsg);
     render();
+    syncNet();
   }
 
   // ---------------------------------------------------------------- MODALI
@@ -711,7 +823,7 @@
       '<span>⛽×' + d.moltMaterie.carburante + '</span><span>🔩×' + d.moltMaterie.metallo + '</span><span>🪨×' + d.moltMaterie.pietra + '</span>' +
       '</div>';
     modal("Colonizzare questo pianeta?", body, [
-      { label: "🚩 Colonizza", primary: true, onClick: () => { game.colonize(fleetId); closeModal(); sel.fleetId = game.fleetById(fleetId) ? fleetId : null; render(); } },
+      { label: "🚩 Colonizza", primary: true, onClick: () => { game.colonize(fleetId); closeModal(); sel.fleetId = game.fleetById(fleetId) ? fleetId : null; render(); syncNet(); } },
       { label: "Lascia libero", onClick: () => { closeModal(); } },
     ]);
   }
@@ -897,7 +1009,7 @@
     modalWide("Esito del combattimento", body);
     const acts = $("modalActions"); acts.innerHTML = "";
     const ok = htmlEl("button", "primary", "OK");
-    ok.onclick = () => { closeModalWide(); sel.fleetId = (ev && game.fleetById(ev.attacker)) ? ev.attacker : null; render(); if (game.winner != null) showWin(); };
+    ok.onclick = () => { closeModalWide(); sel.fleetId = (ev && game.fleetById(ev.attacker)) ? ev.attacker : null; render(); syncNet(); if (game.winner != null) showWin(); };
     acts.appendChild(ok);
     combatCtx = null;
   }
@@ -1029,13 +1141,13 @@
     for (const m of ["carburante", "metallo", "pietra"]) {
       const row = htmlEl("div", "field-row");
       row.appendChild(htmlEl("span", null, m + " (hai " + game.player(f.owner).res[m] + ")"));
-      const buy = htmlEl("button", "small", "Compra 1 (" + CFG.PREZZO_ACQUISTO_CUBO + ")"); buy.onclick = () => { game.marketTradeCube(f.owner, m, 1, false); render(); toast("Comprato 1 " + m); };
-      const sell = htmlEl("button", "small", "Vendi 1 (" + CFG.PREZZO_VENDITA_CUBO + ")"); sell.onclick = () => { game.marketTradeCube(f.owner, m, 1, true); render(); toast("Venduto 1 " + m); };
+      const buy = htmlEl("button", "small", "Compra 1 (" + CFG.PREZZO_ACQUISTO_CUBO + ")"); buy.onclick = () => { game.marketTradeCube(f.owner, m, 1, false); render(); syncNet(); toast("Comprato 1 " + m); };
+      const sell = htmlEl("button", "small", "Vendi 1 (" + CFG.PREZZO_VENDITA_CUBO + ")"); sell.onclick = () => { game.marketTradeCube(f.owner, m, 1, true); render(); syncNet(); toast("Venduto 1 " + m); };
       row.appendChild(buy); row.appendChild(sell); cubeRow.appendChild(row);
     }
     body.appendChild(cubeRow);
     modal("🛒 Mercato", body, [
-      { label: "Acquista la carta", primary: true, onClick: () => { const r = game.marketBuy(fleetId, card); if (!r.ok) toast(r.msg); else { toast("Acquistato!"); } closeModal(); render(); } },
+      { label: "Acquista la carta", primary: true, onClick: () => { const r = game.marketBuy(fleetId, card); if (!r.ok) toast(r.msg); else { toast("Acquistato!"); syncNet(); } closeModal(); render(); } },
       { label: "Chiudi", onClick: () => { closeModal(); render(); } },
     ]);
   }
@@ -1059,11 +1171,11 @@
             const r = game.casinoBet(pid, parseInt(inp.value || "0", 10));
             if (!r.ok) { toast(r.msg); return; }
             const roll = game.casinoRoll(pid);
-            render();
+            render(); syncNet();
             showCasinoRoll(pid, roll, refresh);
           } },
       ];
-      if (s.banco > 0) actions.push({ label: "Lascia (perdi banco)", onClick: () => { game.casinoLeave(pid); closeModal(); render(); } });
+      if (s.banco > 0) actions.push({ label: "Lascia (perdi banco)", onClick: () => { game.casinoLeave(pid); closeModal(); render(); syncNet(); } });
       actions.push({ label: "Esci", onClick: () => { closeModal(); render(); } });
       modal("🎲 Casinò Interspaziale", body, actions);
     }
@@ -1090,7 +1202,7 @@
       acts.innerHTML = "";
       if (roll.outcome === "push") {
         const cont = htmlEl("button", "primary", "Rilancia ▸"); cont.onclick = () => { closeModal(); refresh(); };
-        const leave = htmlEl("button", null, "Lascia (perdi banco)"); leave.onclick = () => { game.casinoLeave(pid); closeModal(); render(); };
+        const leave = htmlEl("button", null, "Lascia (perdi banco)"); leave.onclick = () => { game.casinoLeave(pid); closeModal(); render(); syncNet(); };
         acts.appendChild(cont); acts.appendChild(leave);
       } else {
         const ok = htmlEl("button", "primary", "OK"); ok.onclick = () => { closeModal(); render(); }; acts.appendChild(ok);
@@ -1109,6 +1221,7 @@
   // ---------------------------------------------------------------- TURN FLOW
   let lastRiscossioneToken = null;
   function maybeShowRiscossione() {
+    if (onlineMode) return; // online: gli incassi si mostrano tramite il diff degli eventi
     const ric = game.lastRiscossione;
     if (!ric) return;
     const token = game.turnNumber + "-" + ric.playerId;
@@ -1175,10 +1288,10 @@
   }
 
   function advancePhase() {
-    if (game.winner) return;
-    // Promemoria Casinò: se hai flotte sul Casinò devi giocare
+    if (game.winner || !canControl()) return;
     game.advancePhase();
     sel = { fleetId: null, cellKey: null };
+    syncNet(); // invia lo stato (incluso l'eventuale passaggio di turno) agli altri
     checkTurn();
   }
 
@@ -1203,5 +1316,6 @@
     $("startBtn").addEventListener("click", startGame);
     $("advanceBtn").addEventListener("click", advancePhase);
     $("helpBtn").addEventListener("click", showHelp);
+    initOnlineUI();
   });
 })();
