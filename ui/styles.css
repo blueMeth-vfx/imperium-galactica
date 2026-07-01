@@ -392,3 +392,6 @@ button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation;
 
 /* Toggle conferma eventi */
 #confirmToggle.on { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 12px rgba(255,216,107,.25); }
+
+/* Menù difficoltà IA nel setup */
+.player-row .ai-diff { flex: 0 0 auto; width: auto; padding: 6px 8px; font-size: 12px; }

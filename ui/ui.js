@@ -64,7 +64,12 @@
       const aiLabel = htmlEl("label"); aiLabel.style.cssText = "display:flex;align-items:center;gap:4px;margin:0;font-size:13px;white-space:nowrap";
       const ai = htmlEl("input"); ai.type = "checkbox"; ai.dataset.idx = i; ai.className = "ai-check";
       aiLabel.appendChild(ai); aiLabel.appendChild(document.createTextNode("IA"));
-      row.appendChild(sw); row.appendChild(name); row.appendChild(aiLabel);
+      // Difficoltà (visibile solo se IA)
+      const diff = htmlEl("select", "ai-diff"); diff.style.display = "none";
+      for (const key in CFG.DIFFICULTY) { const o = htmlEl("option"); o.value = key; o.textContent = CFG.DIFFICULTY[key].label; diff.appendChild(o); }
+      diff.value = CFG.DEFAULT_DIFFICULTY;
+      ai.addEventListener("change", () => { diff.style.display = ai.checked ? "" : "none"; });
+      row.appendChild(sw); row.appendChild(name); row.appendChild(aiLabel); row.appendChild(diff);
       wrap.appendChild(row);
     }
   }
@@ -76,6 +81,7 @@
       players.push({
         name: row.querySelector('input[type=text]').value || ("Giocatore " + (i + 1)),
         isAI: row.querySelector('.ai-check').checked,
+        difficulty: row.querySelector('.ai-diff').value,
       });
     });
     const seedVal = $("seed").value;
@@ -99,8 +105,11 @@
     $("onConnect").onclick = connectOnline;
   }
   function randomCode() { const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 4; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
+  const DEFAULT_SERVER = "wss://imperium-mp.matteocongedo-vfx.workers.dev"; // server multiplayer già pronto
   function prefillOnline() {
-    if (!$("onServer").value) $("onServer").value = localStorage.getItem("ig_server") || "";
+    let saved = localStorage.getItem("ig_server");
+    if (!saved || /tuosub|tuo-?sottodominio/.test(saved)) saved = DEFAULT_SERVER; // ignora vecchi segnaposto
+    if (!$("onServer").value) $("onServer").value = saved;
     if (!$("onName").value) $("onName").value = localStorage.getItem("ig_name") || "";
     if (!$("onCode").value) $("onCode").value = randomCode();
   }
@@ -1307,11 +1316,12 @@
     const p = game.player(game.currentPlayer);
     maybeShowRiscossione();
     if (p.isAI) {
-      aiOverlay(true, p.name, p.color);
+      aiOverlay(true, aiName(p), p.color);
       const before = game.log.length;
       setTimeout(() => runAIGen(before, p), 1100);
     }
   }
+  function aiName(p) { const d = CFG.DIFFICULTY[p.difficulty]; return p.name + (d ? " · " + d.label : ""); }
 
   // Esegue il turno IA passo-passo: si ferma quando l'IA attacca un umano, che si difende.
   function runAIGen(before, aiPlayer) {
@@ -1322,7 +1332,7 @@
       if (res.done) { finishAITurn(before); return; }
       const c = res.value; // combattimento contro un umano
       aiOverlay(false); render();
-      const resume = () => { if (game.winner == null) aiOverlay(true, aiPlayer.name, aiPlayer.color); pump(); };
+      const resume = () => { if (game.winner == null) aiOverlay(true, aiName(aiPlayer), aiPlayer.color); pump(); };
       toast("⚠ " + aiPlayer.name + " ti attacca — difenditi!");
       if (c.type === "fleetCombat") startInteractiveCombat("fleet", { attacker: c.attacker, defender: c.defender, q: c.q, r: c.r }, { mySide: "B", onDone: resume });
       else startInteractiveCombat("planet", { attacker: c.attacker, q: c.q, r: c.r, land: c.land }, { mySide: "B", onDone: resume });

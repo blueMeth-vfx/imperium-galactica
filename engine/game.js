@@ -62,6 +62,7 @@
           id: i,
           name: playersDef[i].name || ("Giocatore " + (i + 1)),
           isAI: !!playersDef[i].isAI,
+          difficulty: playersDef[i].difficulty || cfg.DEFAULT_DIFFICULTY,
           color: cfg.COLORS[i],
           colorName: cfg.COLOR_NAMES[i],
           money: cfg.START_MONEY,

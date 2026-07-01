@@ -24,19 +24,20 @@
   function* aiTurnGen(game) {
     const pid = game.currentPlayer;
     const me = game.player(pid);
+    const cfg = C();
+    const diff = cfg.DIFFICULTY[me.difficulty] || cfg.DIFFICULTY[cfg.DEFAULT_DIFFICULTY];
 
     // --- Fase 2: Produzione ---
     for (const cell of game.planetsOf(pid)) {
       if (cell.buildings.fabbricaNavale > 0) {
-        const cap = cell.buildings.fabbricaNavale * cell.planet.data.produttivita;
+        const cap = Math.max(1, Math.round(cell.buildings.fabbricaNavale * cell.planet.data.produttivita * diff.prodPortion));
         for (let i = 0; i < cap; i++) {
-          // Produci Torpediniere se ricco, altrimenti Caccia
-          const type = me.money > 60000 && me.res.carburante >= 3 && me.res.metallo >= 3 ? "torpediniera" : "caccia";
+          const type = diff.produceTorped && me.money > 60000 && me.res.carburante >= 3 && me.res.metallo >= 3 ? "torpediniera" : "caccia";
           if (!game.produceShip(cell.q, cell.r, type, 1).ok) break;
         }
       }
       if (cell.buildings.fabbricaCarri > 0) {
-        const cap = cell.buildings.fabbricaCarri * cell.planet.data.produttivita;
+        const cap = Math.max(1, Math.round(cell.buildings.fabbricaCarri * cell.planet.data.produttivita * diff.prodPortion));
         for (let i = 0; i < cap; i++) if (!game.produceCarri(cell.q, cell.r, 1).ok) break;
       }
     }
@@ -55,25 +56,30 @@
         }
         const nbs = Hex.neighbors(f.q, f.r);
         let target = null, mode = null;
+        // Cerca un bersaglio d'attacco adiacente secondo la difficoltà
+        const findAttack = () => {
+          for (const n of nbs) {
+            const c = game.cell(n.q, n.r);
+            const ef = game.fleets.find((o) => o.q === n.q && o.r === n.r && o.owner !== pid);
+            if (ef && power(game, f) > fleetDefense(game, ef) * diff.attackFactor) return { n, m: "attack" };
+            if (c.type === "planet" && c.owner !== null && c.owner !== pid && c.buildings.cannone === 0 && power(game, f) > 1 && diff.attackFactor <= 1.2) return { n, m: "attackPlanet" };
+          }
+          return null;
+        };
         // 1) pianeta libero adiacente (se ho colonia) -> vai a colonizzare
         if (f.ships.colonia > 0) {
           target = nbs.find((n) => { const c = game.cell(n.q, n.r); return c.explored && c.type === "planet" && c.owner === null; });
           if (target) mode = "colonize";
         }
+        // Difficile: attacca PRIMA di esplorare
+        if (!target && diff.aggressive) { const a = findAttack(); if (a) { target = a.n; mode = a.m; } }
         // 2) cella inesplorata -> esplora
         if (!target) {
           const unexp = nbs.filter((n) => !game.cell(n.q, n.r).explored);
           if (unexp.length) { target = unexp[Math.floor(game.rng() * unexp.length)]; mode = "explore"; }
         }
-        // 3) bersaglio nemico debole adiacente -> attacca
-        if (!target) {
-          for (const n of nbs) {
-            const c = game.cell(n.q, n.r);
-            const ef = game.fleets.find((o) => o.q === n.q && o.r === n.r && o.owner !== pid);
-            if (ef && power(game, f) > fleetDefense(game, ef) * 1.2) { target = n; mode = "attack"; break; }
-            if (c.type === "planet" && c.owner !== null && c.owner !== pid && c.buildings.cannone === 0 && power(game, f) > 1) { target = n; mode = "attackPlanet"; break; }
-          }
-        }
+        // 3) bersaglio nemico -> attacca (per Medio/Facile, dopo l'esplorazione)
+        if (!target) { const a = findAttack(); if (a) { target = a.n; mode = a.m; } }
         // 4) altrimenti vagabonda su spazio esplorato libero
         if (!target) {
           const free = nbs.filter((n) => { const c = game.cell(n.q, n.r); return c.explored && !game.fleets.some((o) => o.q === n.q && o.r === n.r && o.owner !== pid); });
@@ -107,14 +113,18 @@
     }
     game.advancePhase(); // -> Costruzione
 
-    // --- Fase 4: Costruzione ---
-    for (const cell of game.planetsOf(pid)) {
-      if (me.money < 40000) break;
-      let type = null;
-      if (cell.buildings.fabbricaNavale === 0) type = "fabbricaNavale";
-      else if (cell.buildings.tesoreria === 0 && me.money > 60000) type = "tesoreria";
-      else if (cell.buildings.cannone === 0) type = "cannone";
-      if (type) game.buildBuilding(cell.q, cell.r, type);
+    // --- Fase 4: Costruzione (secondo la difficoltà) ---
+    if (diff.buildLevel >= 1) {
+      for (const cell of game.planetsOf(pid)) {
+        if (me.money < 40000) break;
+        let type = null;
+        if (cell.buildings.fabbricaNavale === 0) type = "fabbricaNavale";
+        else if (diff.buildLevel >= 2 && cell.buildings.cannone === 0) type = "cannone"; // difficile: si difende
+        else if (cell.buildings.tesoreria === 0 && me.money > 60000) type = "tesoreria";
+        else if (cell.buildings.cannone === 0) type = "cannone";
+        else if (diff.buildLevel >= 2 && cell.buildings.fabbricaCarri === 0) type = "fabbricaCarri";
+        if (type) game.buildBuilding(cell.q, cell.r, type);
+      }
     }
     game.advancePhase(); // -> fine turno
   }

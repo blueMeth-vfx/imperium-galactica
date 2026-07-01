@@ -23,6 +23,14 @@
     START_MONEY: 50000,
     START_FLEET: { caccia: 3, torpediniera: 0, colonia: 1 }, // 3 Caccia + 1 Nave Colonia
 
+    // Livelli di difficoltà dell'IA
+    DIFFICULTY: {
+      facile:    { label: "Facile",    attackFactor: 2.4, produceTorped: false, buildLevel: 0, prodPortion: 0.5, aggressive: false },
+      medio:     { label: "Medio",     attackFactor: 1.2, produceTorped: true,  buildLevel: 1, prodPortion: 1.0, aggressive: false },
+      difficile: { label: "Difficile", attackFactor: 0.85, produceTorped: true, buildLevel: 2, prodPortion: 1.0, aggressive: true },
+    },
+    DEFAULT_DIFFICULTY: "medio",
+
     // Limiti unità per fazione (contenuto scatola)
     LIMITS: { caccia: 20, torpediniera: 15, colonia: 5, carri: 50 },
 

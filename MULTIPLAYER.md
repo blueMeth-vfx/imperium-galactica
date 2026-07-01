@@ -1,8 +1,19 @@
-# Multiplayer online — come attivarlo
+# Multiplayer online
 
 Il gioco supporta il **multiplayer in rete** (2–4 giocatori su dispositivi diversi), oltre
-all'hot-seat locale. Serve un piccolo server (una "stanza") su **Cloudflare Workers +
-Durable Objects**, che fa da relay tra i giocatori. Il codice del server è in `server/`.
+all'hot-seat locale.
+
+## ✅ Già pronto: non devi fare nulla
+Il server è **già deployato** su Cloudflare e **preimpostato nel gioco**:
+`wss://imperium-mp.matteocongedo-vfx.workers.dev`
+
+Per giocare online basta: scheda **🌐 Online** → nome → **Genera** un codice (o incollane uno)
+→ **Entra nella stanza** → l'host preme **Avvia partita**. Il campo *Server* è già compilato.
+
+---
+
+## (Solo se un giorno vuoi rifare il deploy del server)
+Il server è un piccolo Worker su **Cloudflare Workers + Durable Objects** (codice in `server/`).
 
 ## 1. Deploy del server (una volta sola)
 
