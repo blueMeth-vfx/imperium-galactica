@@ -111,10 +111,13 @@
 
       // Ordine di turno: dado per ciascuno, il più basso inizia; senso orario di default
       const rolls = this.players.map((p) => ({ id: p.id, roll: this.rollDie() }));
-      rolls.sort((a, b) => a.roll - b.roll);
-      this.startPlayer = rolls[0].id;
+      const sorted = rolls.slice().sort((a, b) => a.roll - b.roll);
+      this.startPlayer = sorted[0].id;
       this.direction = 1; // 1 orario, -1 antiorario (scelto dal primo giocatore: default orario)
       this.turnOrder = this._computeOrder(this.startPlayer, this.direction);
+      // Dati per l'animazione dei dadi d'inizio (per la UI), in ordine di fazione
+      this.orderRolls = rolls.map((r) => ({ id: r.id, roll: r.roll, name: this.players[r.id].name, color: this.players[r.id].color }));
+      this.moveLog = []; // spostamenti recenti (per frecce e banner)
       this.say("Lanci d'ordine: " + rolls.map((x) => this.players[x.id].colorName + "=" + x.roll).join(", ") +
         ". Inizia " + this.players[this.startPlayer].colorName + ".");
 
@@ -422,24 +425,34 @@
       return this._enterCell(f, cell, { revealed });
     }
 
+    // Registra uno spostamento (per frecce/banner nella UI)
+    _logMove(fq, fr, tq, tr, owner) {
+      if (!this.moveLog) this.moveLog = [];
+      this.moveLog.push({ fromQ: fq, fromR: fr, toQ: tq, toR: tr, owner: owner });
+      if (this.moveLog.length > 300) this.moveLog.shift();
+    }
+
     // Completa l'ingresso su una cella libera/amica (dopo eventuale combattimento vinto)
     _enterCell(f, cell, info) {
       info = info || {};
+      const fromQ = f.q, fromR = f.r; // partenza (per freccia e log)
       let asteroid = null;
       // Asteroidi: si pesca una carta ad ogni attraversamento
       if (cell.type === "asteroids") {
         const card = this.drawAsteroidCard();
         asteroid = this.applyAsteroid(f, card);
-        if (this.fleetShipCount(f) === 0) { this._destroyFleet(f); return { ok: true, event: "destroyed", asteroid: asteroid, revealed: info.revealed }; }
+        if (this.fleetShipCount(f) === 0) { this._destroyFleet(f); this._logMove(fromQ, fromR, cell.q, cell.r, f.owner); return { ok: true, event: "destroyed", asteroid: asteroid, revealed: info.revealed, fromQ: fromQ, fromR: fromR }; }
       }
-      // Sposta la flotta; eventuale fusione con flotta propria già presente
+      // Sposta la flotta; conta il passo PRIMA dell'eventuale fusione
       const mine = this.fleetOfAt(f.owner, cell.q, cell.r);
       f.q = cell.q; f.r = cell.r;
-      if (mine && mine.id !== f.id) this._mergeFleets(mine, f);
       f.stepsLeft--;
+      // Fusione: se una delle due ha già finito i passi, l'intera flotta unita non si muove più
+      if (mine && mine.id !== f.id) this._mergeFleets(mine, f);
       const moved = this.fleetById(f.id) || mine;
+      this._logMove(fromQ, fromR, cell.q, cell.r, f.owner);
       return { ok: true, event: info.casino ? "casino" : "moved", fleet: (moved ? moved.id : f.id), q: cell.q, r: cell.r,
-        revealed: info.revealed, asteroid: asteroid,
+        revealed: info.revealed, asteroid: asteroid, fromQ: fromQ, fromR: fromR,
         canColonize: cell.type === "planet" && cell.owner === null && (moved && moved.ships.colonia > 0) };
     }
     _afterStepDestroyed() { return { ok: true, event: "destroyed" }; }
@@ -449,7 +462,8 @@
       keep.ships.torpediniera += gone.ships.torpediniera;
       keep.ships.colonia += gone.ships.colonia;
       keep.carri += gone.carri;
-      keep.stepsLeft = Math.min(keep.stepsLeft, gone.stepsLeft);
+      // Se almeno una delle due ha finito i passi (0), la flotta unita è ferma; mai oltre la sua velocità.
+      keep.stepsLeft = Math.min(keep.stepsLeft, gone.stepsLeft, this.fleetSpeed(keep));
       this.fleets = this.fleets.filter((x) => x.id !== gone.id);
     }
 
@@ -533,7 +547,7 @@
     "players", "board", "fleets", "fleetSeq", "tileDeck", "planetPool",
     "asteroidDeck", "asteroidDiscard", "marketDeck", "turnOrder", "startPlayer",
     "direction", "turnNumber", "orderIdx", "phaseIdx", "currentPlayer", "winner",
-    "log", "lastRiscossione", "casinoSessions",
+    "log", "lastRiscossione", "casinoSessions", "orderRolls",
   ];
   Game.prototype.toState = function () {
     const o = {};

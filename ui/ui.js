@@ -14,6 +14,7 @@
   let game = null;
   let sel = { fleetId: null, cellKey: null };
   let moveAnim = null; // {fleetId, fromX, fromY} per animare lo spostamento
+  let startDiceShown = false; // dadi d'inizio già mostrati per questa partita
 
   // --- Stato multiplayer online ---
   let onlineMode = false;    // partita online (via server) vs locale hot-seat
@@ -88,13 +89,14 @@
     const opts = { players };
     if (seedVal) opts.seed = parseInt(seedVal, 10);
     game = new IG.Game(opts);
-    onlineMode = false; myPlayerId = -1;
+    onlineMode = false; myPlayerId = -1; startDiceShown = false;
     $("setup").classList.add("hidden");
     $("game").classList.remove("hidden");
     sel = { fleetId: null, cellKey: null };
     render();
     centerBoard();
-    checkTurn();
+    startDiceShown = true;
+    showStartDice(() => checkTurn()); // lancio dei dadi d'inizio, poi via
   }
 
   // ==================== ONLINE / LOBBY ====================
@@ -175,6 +177,8 @@
     lastLogLen = game.log.length;
     render(); centerBoard();
     applyingRemote = false;
+    // Dadi d'inizio (una sola volta, alla prima ricezione dello stato)
+    if (!startDiceShown) { startDiceShown = true; showStartDice(() => {}); }
     showRemoteEvents(newLines);
     if (game.winner != null) showWin();
     else if (!isMyTurn()) toast("Turno di " + game.player(game.currentPlayer).name);
@@ -600,6 +604,8 @@
       render(); // rende con l'animazione di scivolamento
       if (newly) pulseCell(q, r);
     }
+    // Freccia a scomparsa dello spostamento
+    if (ev.fromQ !== undefined && (ev.fromQ !== q || ev.fromR !== r)) showMoveArrow(ev.fromQ, ev.fromR, q, r, game.player(game.currentPlayer).color);
 
     // Eventi visivi (banner) e finestre
     if (ev.asteroid) showAsteroidCard(ev.asteroid, ev.event === "destroyed");
@@ -678,6 +684,29 @@
   function updateConfirmBtn() {
     const btn = $("confirmToggle");
     if (btn) { btn.textContent = confirmEvents ? "🔔 Eventi: conferma" : "🔕 Eventi: auto"; btn.classList.toggle("on", confirmEvents); }
+  }
+
+  // Freccia a scomparsa che indica uno spostamento sul tabellone
+  function showMoveArrow(fq, fr, tq, tr, color) {
+    const svg = $("board"); if (!svg) return;
+    const a = hexCenter(fq, fr), b = hexCenter(tq, tr);
+    const g = svgEl("g", { class: "move-arrow" }); g.style.color = color;
+    g.appendChild(svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: color, "stroke-width": 4.5, "stroke-linecap": "round" }));
+    const ang = Math.atan2(b.y - a.y, b.x - a.x), s = 13;
+    const p1x = b.x - s * Math.cos(ang - 0.45), p1y = b.y - s * Math.sin(ang - 0.45);
+    const p2x = b.x - s * Math.cos(ang + 0.45), p2y = b.y - s * Math.sin(ang + 0.45);
+    g.appendChild(svgEl("polygon", { points: b.x.toFixed(1) + "," + b.y.toFixed(1) + " " + p1x.toFixed(1) + "," + p1y.toFixed(1) + " " + p2x.toFixed(1) + "," + p2y.toFixed(1), fill: color }));
+    svg.appendChild(g);
+    setTimeout(() => { try { g.remove(); } catch (e) {} }, 1400);
+  }
+
+  // Banner informativo in basso (usato per gli spostamenti dell'IA)
+  function bottomInfo(text, color) {
+    let el = $("moveBanner");
+    if (!el) { el = htmlEl("div"); el.id = "moveBanner"; document.body.appendChild(el); }
+    el.innerHTML = text; el.style.borderColor = color || "var(--border-bright)";
+    el.classList.add("show");
+    clearTimeout(el._h); el._h = setTimeout(() => el.classList.remove("show"), 1700);
   }
 
   // ---------------------------------------------------------------- SELEZIONE / AZIONI
@@ -1308,6 +1337,43 @@
     modal("Fine partita", body, [{ label: "Nuova partita", primary: true, onClick: () => location.reload() }]);
   }
 
+  // Lancio dei dadi d'inizio: chi ottiene il numero più basso comincia (e sceglie il senso).
+  function showStartDice(onDone) {
+    const rolls = game.orderRolls || [];
+    if (!rolls.length) { onDone(); return; }
+    const starterId = game.startPlayer != null ? game.startPlayer : (game.turnOrder ? game.turnOrder[0] : rolls[0].id);
+    const body = htmlEl("div", "startdice");
+    body.appendChild(htmlEl("p", "muted center", "Ogni fazione lancia un dado: chi ottiene il numero più basso inizia."));
+    const grid = htmlEl("div", "sd-grid");
+    const items = rolls.map((r) => {
+      const cell = htmlEl("div", "sd-player");
+      const nm = htmlEl("div", "sd-name"); nm.innerHTML = '<span class="dot" style="background:' + r.color + '"></span>' + esc(r.name); cell.appendChild(nm);
+      const d = dieEl(r.roll, "casino"); cell.appendChild(d);
+      grid.appendChild(cell);
+      return { cell, id: r.id };
+    });
+    body.appendChild(grid);
+    const result = htmlEl("div", "sd-result"); body.appendChild(result);
+    modalWide("🎲 Chi inizia la partita?", body);
+    $("modalActions").innerHTML = "";
+    tumbleDice(body, () => {
+      items.forEach((it) => { if (it.id === starterId) it.cell.classList.add("starter"); });
+      const starter = game.player(starterId);
+      result.innerHTML = '🏁 Inizia <b style="color:' + starter.color + '">' + esc(starter.name) + "</b>";
+      const acts = $("modalActions"); acts.innerHTML = "";
+      const iAmStarter = !starter.isAI && (!onlineMode || starterId === myPlayerId);
+      if (!onlineMode && iAmStarter) {
+        // Il primo giocatore sceglie il senso di gioco
+        result.innerHTML += '<div class="sd-dir">Scegli il senso di gioco (2+ giocatori):</div>';
+        const cw = htmlEl("button", "primary", "↻ Orario"); cw.onclick = () => { game.setDirection(1); closeModalWide(); onDone(); };
+        const ccw = htmlEl("button", null, "↺ Antiorario"); ccw.onclick = () => { game.setDirection(-1); closeModalWide(); onDone(); };
+        acts.appendChild(cw); acts.appendChild(ccw);
+      } else {
+        const ok = htmlEl("button", "primary", "Comincia ▸"); ok.onclick = () => { closeModalWide(); onDone(); }; acts.appendChild(ok);
+      }
+    });
+  }
+
   // ---------------------------------------------------------------- TURN FLOW
   let lastRiscossioneToken = null;
   function maybeShowRiscossione() {
@@ -1342,18 +1408,19 @@
     if (p.isAI) {
       aiOverlay(true, aiName(p), p.color);
       const before = game.log.length;
-      setTimeout(() => runAIGen(before, p), 1100);
+      const moveBefore = (game.moveLog || []).length;
+      setTimeout(() => runAIGen(before, moveBefore, p), 1100);
     }
   }
   function aiName(p) { const d = CFG.DIFFICULTY[p.difficulty]; return p.name + (d ? " · " + d.label : ""); }
 
   // Esegue il turno IA passo-passo: si ferma quando l'IA attacca un umano, che si difende.
-  function runAIGen(before, aiPlayer) {
+  function runAIGen(before, moveBefore, aiPlayer) {
     const gen = IG.aiTurnGen(game);
     function pump() {
       let res;
       try { res = gen.next(); } catch (e) { console.error(e); toast("Errore IA: " + e.message); res = { done: true }; }
-      if (res.done) { finishAITurn(before); return; }
+      if (res.done) { finishAITurn(before, moveBefore, aiPlayer); return; }
       const c = res.value; // combattimento contro un umano
       aiOverlay(false); render();
       const resume = () => { if (game.winner == null) aiOverlay(true, aiName(aiPlayer), aiPlayer.color); pump(); };
@@ -1363,11 +1430,30 @@
     }
     pump();
   }
-  function finishAITurn(before) {
+  function finishAITurn(before, moveBefore, aiPlayer) {
     const newLines = game.log.slice(before);
+    const newMoves = (game.moveLog || []).slice(moveBefore).filter((m) => m.owner === aiPlayer.id);
     sel = { fleetId: null, cellKey: null };
     render();
-    playAIEvents(newLines, () => { aiOverlay(false); checkTurn(); });
+    // prima gli spostamenti (frecce + banner in basso), poi gli altri eventi
+    playAIMoves(newMoves, aiPlayer, () => {
+      playAIEvents(newLines, () => { aiOverlay(false); checkTurn(); });
+    });
+  }
+
+  // Riproduce gli spostamenti dell'IA con freccia sul tabellone + banner informativo in basso
+  function playAIMoves(moves, aiPlayer, done) {
+    const shown = moves.slice(-6);
+    let i = 0;
+    function next() {
+      if (i >= shown.length) { setTimeout(done, 200); return; }
+      const m = shown[i++];
+      showMoveArrow(m.fromQ, m.fromR, m.toQ, m.toR, aiPlayer.color);
+      bottomInfo('🤖 <b style="color:' + aiPlayer.color + '">' + esc(aiPlayer.name) + '</b> sposta una flotta → (' + m.toQ + ',' + m.toR + ')', aiPlayer.color);
+      setTimeout(next, 700);
+    }
+    if (!shown.length) { done(); return; }
+    next();
   }
 
   // Mostra gli eventi rilevanti del turno IA come banner, ritmati
@@ -1380,6 +1466,8 @@
       else if (/riscuote/.test(l)) events.push(["bonus", "💰 IA", "💰", l]);
       else if (/produce/.test(l)) events.push(["discovery", "🏭 IA", "🏭", l]);
       else if (/costruisce/.test(l)) events.push(["discovery", "🏗️ IA", "🏗️", l]);
+      else if (/Asteroidi.*perde/.test(l)) events.push(["malus", "☄️ IA", "💥", l]);
+      else if (/Asteroidi.*guadagna/.test(l)) events.push(["bonus", "☄️ IA", "✨", l]);
       else if (/eliminato/.test(l)) events.push(["malus", "☠️", "☠️", l]);
     }
     // La coda dei banner gestisce ritmo e (eventuale) conferma: accodo tutto e proseguo.
