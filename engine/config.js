@@ -33,6 +33,7 @@
 
     // Limiti unità per fazione (contenuto scatola)
     LIMITS: { caccia: 20, torpediniera: 15, colonia: 5, carri: 50 },
+    MAX_CARRI_PIANETA: 10, // massimo di carri nella guarnigione di un pianeta
 
     // Composizione mazzo tessere (100; ~73 entrano in gioco con 4 angoli pre-rivelati)
     TILE_DECK: { space: 47, planet: 30, asteroids: 15, market: 5, casino: 3 },

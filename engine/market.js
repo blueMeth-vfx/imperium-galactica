@@ -14,8 +14,15 @@
     return card;
   };
 
+  // Pianeti della fazione dove si possono ancora assegnare 'qta' carri (guarnigione < max)
+  G.prototype.planetsWithGarrisonRoom = function (pid, qta) {
+    return this.planetsOf(pid).filter((c) => c.garrison + qta <= C().MAX_CARRI_PIANETA);
+  };
+
   // Acquista l'unità proposta dalla carta. La flotta deve trovarsi sul Mercato.
-  G.prototype.marketBuy = function (fleetId, card) {
+  // Per i CARRI: se la flotta ha capienza vanno sulle navi; altrimenti, indicando
+  // targetPlanet {q,r}, vanno nella guarnigione di un pianeta colonizzato (max per pianeta).
+  G.prototype.marketBuy = function (fleetId, card, targetPlanet) {
     const f = this.fleetById(fleetId);
     if (!f) return { ok: false, msg: "Flotta inesistente." };
     if (this.cell(f.q, f.r).type !== "market") return { ok: false, msg: "La flotta non è su un Mercato." };
@@ -23,17 +30,33 @@
     if (p.money < card.prezzo) return { ok: false, msg: "Ndri insufficienti." };
 
     if (card.unita === "carri") {
-      const cap = this.fleetCarriCapacity(f) - f.carri;
-      if (cap < card.qta) return { ok: false, msg: "Capienza carri insufficiente nella flotta." };
       if (this.countUnits(p.id, "carri") + card.qta > C().LIMITS.carri) return { ok: false, msg: "Limite carri di fazione." };
-      p.money -= card.prezzo; f.carri += card.qta;
-    } else {
-      if (this.countUnits(p.id, card.unita) + card.qta > C().LIMITS[card.unita]) return { ok: false, msg: "Limite di fazione raggiunto." };
-      p.money -= card.prezzo; f.ships[card.unita] += card.qta;
+      if (targetPlanet) {
+        // Assegna alla guarnigione di un pianeta colonizzato
+        const cell = this.cell(targetPlanet.q, targetPlanet.r);
+        if (!cell || cell.owner !== p.id || cell.type !== "planet") return { ok: false, msg: "Pianeta non valido." };
+        if (cell.garrison + card.qta > C().MAX_CARRI_PIANETA) return { ok: false, msg: "Massimo " + C().MAX_CARRI_PIANETA + " carri per pianeta." };
+        p.money -= card.prezzo; cell.garrison += card.qta;
+        this.say(p.colorName + " acquista al Mercato " + card.qta + " Carri (assegnati a " + cell.planet.data.nome + ").");
+        return { ok: true, dest: "planet" };
+      }
+      // Prova a caricarli sulle navi
+      const cap = this.fleetCarriCapacity(f) - f.carri;
+      if (cap >= card.qta) {
+        p.money -= card.prezzo; f.carri += card.qta;
+        this.say(p.colorName + " acquista al Mercato " + card.qta + " Carri (caricati sulla flotta).");
+        return { ok: true, dest: "fleet" };
+      }
+      // Nessuna capienza: servono pianeti colonizzati con posto
+      if (this.planetsWithGarrisonRoom(p.id, card.qta).length === 0) return { ok: false, msg: "Nessuna capienza sulle navi né pianeti disponibili (max " + C().MAX_CARRI_PIANETA + "/pianeta)." };
+      return { ok: false, needPlanet: true, msg: "Nessuna capienza sulle navi: scegli un pianeta a cui assegnarli." };
     }
-    this.say(p.colorName + " acquista al Mercato " + card.qta + " " +
-      (card.unita === "carri" ? "Carri" : C().SHIP_NAMES[card.unita]) + " per " + card.prezzo + " Ndri.");
-    return { ok: true };
+
+    // Navi
+    if (this.countUnits(p.id, card.unita) + card.qta > C().LIMITS[card.unita]) return { ok: false, msg: "Limite di fazione raggiunto." };
+    p.money -= card.prezzo; f.ships[card.unita] += card.qta;
+    this.say(p.colorName + " acquista al Mercato " + card.qta + " " + C().SHIP_NAMES[card.unita] + " per " + card.prezzo + " Ndri.");
+    return { ok: true, dest: "fleet" };
   };
 
   // Compra/vende cubi materia a prezzo fisso (house rule)

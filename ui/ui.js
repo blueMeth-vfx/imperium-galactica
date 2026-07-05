@@ -1256,15 +1256,28 @@
         row.appendChild(buy); row.appendChild(sell); body.appendChild(row);
       }
 
-      const actions = [];
-      if (!entry.bought) {
-        actions.push({ label: "🛒 Acquista il deal (" + (card.prezzo / 1000) + "k)", primary: true, onClick: () => {
-          const r = game.marketBuy(fleetId, card);
-          if (!r.ok) { toast("❌ " + r.msg); return; } // NON chiude: mostra il motivo
-          entry.bought = true; render(); syncNet(); flashBanner("bonus", "🛒 Mercato", "🛒", "Acquistati " + card.qta + "× " + unitName, "");
-          refresh();
-        } });
+      // Acquisto della carta (per i carri: nave se c'è capienza, altrimenti scelta del pianeta)
+      function tryBuyCard(targetPlanet) {
+        const r = game.marketBuy(fleetId, card, targetPlanet);
+        if (r.ok) {
+          entry.bought = true; render(); syncNet();
+          flashBanner("bonus", "🛒 Mercato", "🛒", "Acquistati " + card.qta + "× " + unitName, r.dest === "planet" ? "assegnati a un pianeta" : "caricati sulla flotta");
+          refresh(); return;
+        }
+        if (r.needPlanet) { chooseCarriPlanet(); return; }
+        toast("❌ " + r.msg);
       }
+      function chooseCarriPlanet() {
+        const planets = game.planetsWithGarrisonRoom(f.owner, card.qta);
+        const b = htmlEl("div");
+        b.appendChild(htmlEl("p", "muted center", "Le navi non hanno capienza per " + card.qta + " carri. Assegnali a un tuo pianeta (max " + CFG.MAX_CARRI_PIANETA + " per pianeta):"));
+        const acts = planets.map((cell) => ({ label: "🪐 " + cell.planet.data.nome + " (" + cell.garrison + "/" + CFG.MAX_CARRI_PIANETA + ")", onClick: () => tryBuyCard({ q: cell.q, r: cell.r }) }));
+        acts.push({ label: "Annulla", onClick: () => refresh() });
+        modal("🪖 Assegna i carri a un pianeta", b, acts);
+      }
+
+      const actions = [];
+      if (!entry.bought) actions.push({ label: "🛒 Acquista il deal (" + (card.prezzo / 1000) + "k)", primary: true, onClick: () => tryBuyCard() });
       actions.push({ label: "Chiudi", onClick: () => { closeModal(); render(); } });
       modal("🛒 Mercato", body, actions);
     }

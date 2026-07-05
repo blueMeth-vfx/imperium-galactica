@@ -291,6 +291,7 @@
       const cap = cell.buildings.fabbricaCarri * cell.planet.data.produttivita;
       if (cell.producedCarri + qty > cap) return { ok: false, msg: "Limite produzione carri: " + cap + "/turno." };
       if (this.countUnits(p.id, "carri") + qty > C().LIMITS.carri) return { ok: false, msg: "Limite carri di fazione." };
+      if (cell.garrison + qty > C().MAX_CARRI_PIANETA) return { ok: false, msg: "Massimo " + C().MAX_CARRI_PIANETA + " carri per pianeta." };
       const cc = C().CARRO;
       if (p.res.carburante < cc.carburante * qty || p.res.metallo < cc.metallo * qty || p.money < cc.costo * qty)
         return { ok: false, msg: "Risorse insufficienti." };
@@ -320,7 +321,8 @@
       if (!f) return { ok: false };
       const cell = this.cell(f.q, f.r);
       if (!cell || cell.owner !== f.owner || cell.type !== "planet") return { ok: false, msg: "Non su un proprio pianeta." };
-      n = Math.min(n, f.carri);
+      n = Math.min(n, f.carri, C().MAX_CARRI_PIANETA - cell.garrison);
+      if (n <= 0) return { ok: false, msg: "Guarnigione piena (max " + C().MAX_CARRI_PIANETA + " carri per pianeta)." };
       f.carri -= n; cell.garrison += n;
       return { ok: true };
     }
