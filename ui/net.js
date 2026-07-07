@@ -31,6 +31,7 @@
     start(state, numPlayers) { this.send({ t: "start", state: state, numPlayers: numPlayers }); },
     pushState(state) { this.send({ t: "state", state: state }); },
     sendEvent(text) { this.send({ t: "event", text: text }); },
+    sendChat(text) { this.send({ t: "chat", text: text }); },
     close() { try { this.ws && this.ws.close(); } catch (e) {} },
   };
   window.IGNet = IGNet;

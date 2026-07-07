@@ -100,6 +100,13 @@ export class Room {
       this.broadcast({ t: "event", text: (m.text || "").slice(0, 200), seat: conn.seat }, conn.id);
       return;
     }
+
+    if (m.t === "chat") {
+      const text = (m.text || "").slice(0, 300);
+      if (!text) return;
+      this.broadcast({ t: "chat", text: text, name: conn.name, seat: conn.seat }, conn.id);
+      return;
+    }
   }
 }
 

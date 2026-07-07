@@ -127,11 +127,51 @@
     N.on("open", () => { $("onStatus").textContent = "Connesso."; });
     N.on("error", (d) => { $("onStatus").textContent = "⚠ " + ((d && d.msg) || "Errore di connessione."); });
     N.on("close", () => { if (!onlineMode) $("onStatus").textContent = "Connessione chiusa."; else toast("Disconnesso dal server."); });
-    N.on("welcome", (m) => { if (m.seat < 0) toast("Stanza piena / partita già iniziata: sei spettatore."); enterLobby(); if (m.started && m.state) applyRemoteState(m.state); });
+    N.on("welcome", (m) => { if (m.seat < 0) toast("Stanza piena / partita già iniziata: sei spettatore."); enterLobby(); initChat(); if (m.started && m.state) applyRemoteState(m.state); });
     N.on("roster", () => renderLobby());
     N.on("started", (m) => applyRemoteState(m.state));
     N.on("state", (m) => applyRemoteState(m.state));
+    N.on("chat", (m) => addChatMessage(m.name, m.seat, m.text, false));
     N.connect(server, code, name);
+  }
+
+  // ---------------------------------------------------------------- CHAT ONLINE
+  function initChat() {
+    if ($("chatWidget")) { $("chatWidget").classList.remove("hidden"); return; }
+    const w = htmlEl("div"); w.id = "chatWidget"; w.className = "collapsed";
+    w.innerHTML =
+      '<div id="chatHeader">💬 Chat <span id="chatBadge"></span><span id="chatToggle">▸</span></div>' +
+      '<div id="chatBody">' +
+      '<div id="chatMessages"></div>' +
+      '<div id="chatInputRow"><input id="chatInput" type="text" placeholder="Scrivi un messaggio…" maxlength="300" /><button id="chatSend" class="primary small">Invia</button></div>' +
+      "</div>";
+    document.body.appendChild(w);
+    $("chatHeader").onclick = () => {
+      w.classList.toggle("collapsed");
+      $("chatToggle").textContent = w.classList.contains("collapsed") ? "▸" : "▾";
+      if (!w.classList.contains("collapsed")) { $("chatBadge").textContent = ""; chatUnread = 0; $("chatInput").focus(); }
+    };
+    $("chatSend").onclick = sendChatMessage;
+    $("chatInput").onkeydown = (e) => { if (e.key === "Enter") sendChatMessage(); };
+  }
+  let chatUnread = 0;
+  function sendChatMessage() {
+    const inp = $("chatInput"); if (!inp) return;
+    const text = inp.value.trim(); if (!text) return;
+    window.IGNet.sendChat(text);
+    addChatMessage(window.IGNet.name, window.IGNet.seat, text, true);
+    inp.value = "";
+  }
+  function addChatMessage(name, seat, text, mine) {
+    initChat();
+    const box = $("chatMessages"); if (!box) return;
+    const color = (seat != null && seat >= 0) ? CFG.COLORS[seat] : "#8593b5";
+    const msg = htmlEl("div", "chat-msg" + (mine ? " mine" : ""));
+    msg.innerHTML = '<span class="cm-name" style="color:' + color + '">' + esc(name || "?") + "</span> " + esc(text);
+    box.appendChild(msg);
+    box.scrollTop = box.scrollHeight;
+    const w = $("chatWidget");
+    if (!mine && w && w.classList.contains("collapsed")) { chatUnread++; $("chatBadge").textContent = chatUnread; }
   }
   function enterLobby() {
     $("setup").classList.add("hidden");
