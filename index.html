@@ -4,11 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imperium Galactica — Gioco da Tavolo</title>
-  <link rel="stylesheet" href="ui/styles.css?v=35" />
+  <link rel="stylesheet" href="ui/styles.css?v=36" />
 </head>
 <body>
   <!-- ===================== Schermata di setup ===================== -->
   <div id="setup" class="screen">
+    <!-- Scenografia: pianeta gigante con luna in orbita (solo estetica) -->
+    <div id="setupScene" aria-hidden="true">
+      <div id="setupPlanet" class="planet-art pa-Terra" style="--dur:38s"><div class="surf"></div><div class="hl"></div></div>
+      <div id="setupOrbit"><div id="setupMoon" class="planet-art pa-Roccia" style="--dur:22s"><div class="surf"></div><div class="hl"></div></div></div>
+    </div>
     <div class="setup-box">
       <h1>IMPERIUM GALACTICA</h1>
       <p class="subtitle">Il Gioco da Tavolo — versione digitale</p>
@@ -108,17 +113,17 @@
   </div>
 
   <!-- Engine (logica pura). Il ?v= forza il refresh dopo gli aggiornamenti. -->
-  <script src="data/gamedata.js?v=35"></script>
-  <script src="engine/config.js?v=35"></script>
-  <script src="engine/hex.js?v=35"></script>
-  <script src="engine/game.js?v=35"></script>
-  <script src="engine/combat.js?v=35"></script>
-  <script src="engine/casino.js?v=35"></script>
-  <script src="engine/market.js?v=35"></script>
-  <script src="engine/ai.js?v=35"></script>
+  <script src="data/gamedata.js?v=36"></script>
+  <script src="engine/config.js?v=36"></script>
+  <script src="engine/hex.js?v=36"></script>
+  <script src="engine/game.js?v=36"></script>
+  <script src="engine/combat.js?v=36"></script>
+  <script src="engine/casino.js?v=36"></script>
+  <script src="engine/market.js?v=36"></script>
+  <script src="engine/ai.js?v=36"></script>
   <!-- Interfaccia -->
-  <script src="ui/sound.js?v=35"></script>
-  <script src="ui/net.js?v=35"></script>
-  <script src="ui/ui.js?v=35"></script>
+  <script src="ui/sound.js?v=36"></script>
+  <script src="ui/net.js?v=36"></script>
+  <script src="ui/ui.js?v=36"></script>
 </body>
 </html>

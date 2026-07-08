@@ -653,6 +653,11 @@
       '<radialGradient id="g-unexplored" cx="50%" cy="38%" r="80%"><stop offset="0%" stop-color="#3a3f4d"/><stop offset="55%" stop-color="#22252e"/><stop offset="100%" stop-color="#0a0b10"/></radialGradient>' +
       '<linearGradient id="g-side" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3a5894"/><stop offset="35%" stop-color="#1c2c4e"/><stop offset="100%" stop-color="#04060e"/></linearGradient>' +
       pg + shipGrads() +
+      // Nebulose (grandi macchie di colore alla deriva dietro i tasselli)
+      '<radialGradient id="neb-violet" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.30"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="neb-cyan" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#22d3ee" stop-opacity="0.22"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="neb-rose" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fb7185" stop-opacity="0.20"/><stop offset="100%" stop-color="#fb7185" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="neb-amber" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fbbf24" stop-opacity="0.16"/><stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/></radialGradient>' +
       // Ombreggiatura sferica: luce in alto a sinistra, terminatore scuro sul bordo
       '<radialGradient id="p-shade" cx="36%" cy="30%" r="78%">' +
       '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.18"/><stop offset="34%" stop-color="#000000" stop-opacity="0"/>' +
@@ -714,11 +719,17 @@
     if (type === "carri") { g.appendChild(svgEl("circle", { cx: 0, cy: 1.5, r: 3, fill: "url(#ship-" + ownerId + ")", stroke: dk, "stroke-width": 0.7 })); g.appendChild(rect(-0.8, -8, 1.6, 6, dk)); }
     // Abitacolo
     if (type !== "carri") g.appendChild(svgEl("ellipse", { cx: 0, cy: type === "colonia" ? -1 : -5, rx: 1.1, ry: 2, fill: "#dff2ff", opacity: 0.95 }));
-    // Reattori luminosi (senza filtro: nucleo brillante + alone tenue, leggero da rendere)
-    for (const e of (SHIP_ENGINES[type] || [])) {
-      g.appendChild(svgEl("circle", { cx: e[0], cy: e[1], r: 2, fill: "#7fe8ff", opacity: 0.35 }));
+    // Reattori luminosi: scia + alone pulsante + nucleo brillante
+    const engines = SHIP_ENGINES[type] || [];
+    engines.forEach((e, i) => {
+      const trail = svgEl("ellipse", { cx: e[0], cy: e[1] + 2.6, rx: 0.9, ry: 2.6, fill: "#7fe8ff", opacity: 0.3, class: "eng-trail" });
+      trail.setAttribute("style", "animation-delay:" + (i * 0.22) + "s");
+      g.appendChild(trail);
+      const glow = svgEl("circle", { cx: e[0], cy: e[1], r: 2, fill: "#7fe8ff", opacity: 0.35, class: "eng-glow" });
+      glow.setAttribute("style", "animation-delay:" + (i * 0.3) + "s");
+      g.appendChild(glow);
       g.appendChild(svgEl("circle", { cx: e[0], cy: e[1], r: 1, fill: "#e8ffff" }));
-    }
+    });
   }
 
   // Disegna un'astronave ORIZZONTALE "fluttuante": ombra staccata + alone + scafo rialzato
@@ -850,6 +861,20 @@
     applyBoardView();
     svg.innerHTML = boardDefs();
 
+    // Nebulose alla deriva dietro i tasselli (posizioni stabili, moto lentissimo)
+    const NEBS = [
+      ["neb-violet", 0.16, 0.22, 170, 110, 46, 0],
+      ["neb-cyan", 0.78, 0.30, 150, 95, 58, 8],
+      ["neb-rose", 0.30, 0.80, 160, 100, 52, 4],
+      ["neb-amber", 0.86, 0.78, 130, 85, 64, 12],
+    ];
+    for (const nb of NEBS) {
+      const ne = svgEl("ellipse", { cx: (w * nb[1]).toFixed(0), cy: (h * nb[2]).toFixed(0), rx: nb[3], ry: nb[4], fill: "url(#" + nb[0] + ")", class: "nebula" });
+      const drift = svgEl("animateTransform", { attributeName: "transform", type: "translate", values: "0 0; " + (20 - nb[5]) + " " + (12 - nb[5] / 2) + "; 0 0", dur: (38 + nb[5] * 2) + "s", begin: "-" + nb[5] + "s", repeatCount: "indefinite" });
+      ne.appendChild(drift);
+      svg.appendChild(ne);
+    }
+
     const reach = reachableSet();
     const S = HEX_SIZE - 2;
 
@@ -882,10 +907,24 @@
         svg.appendChild(svgEl("polyline", { points: v[3].x.toFixed(1) + "," + v[3].y.toFixed(1) + " " + v[4].x.toFixed(1) + "," + v[4].y.toFixed(1) + " " + v[5].x.toFixed(1) + "," + v[5].y.toFixed(1) + " " + v[0].x.toFixed(1) + "," + v[0].y.toFixed(1), class: "hex-rim" }));
 
         if (!cell.explored) {
-          // velo di nebbia: punto interrogativo tenue
+          // nebbia viva: banchi scuri che respirano + "?" che brilla debolmente
+          for (let i = 0; i < 2; i++) {
+            const fx = c.x + (hash(q, r, i + 70) - 0.5) * S * 0.8;
+            const fy = c.y + (hash(q, r, i + 80) - 0.5) * S * 0.8;
+            // solo il banco chiaro respira: quello scuro è statico (metà animazioni)
+            const fb = svgEl("ellipse", { cx: fx.toFixed(1), cy: fy.toFixed(1), rx: (10 + hash(q, r, i + 85) * 8).toFixed(1), ry: (6 + hash(q, r, i + 95) * 5).toFixed(1), fill: i ? "#0a0d16" : "#232838", opacity: i ? 0.45 : 0.5, class: i ? "" : "fog-blob" });
+            if (!i) fb.setAttribute("style", "animation-delay:" + (hash(q, r, i + 17) * 6).toFixed(1) + "s;animation-duration:" + (5 + hash(q, r, i + 19) * 4).toFixed(1) + "s");
+            svg.appendChild(fb);
+          }
           const qm = svgEl("text", { x: c.x, y: c.y + 6, class: "fog" }); qm.textContent = "?";
+          qm.setAttribute("style", "animation-delay:" + (hash(q, r, 23) * 5).toFixed(1) + "s");
           svg.appendChild(qm);
           continue;
+        }
+        // bagliore territoriale: la cella di un pianeta conquistato respira del colore della fazione
+        if (cell.type === "planet" && cell.owner != null) {
+          const tg = svgEl("ellipse", { cx: c.x, cy: c.y, rx: S * 0.92, ry: S * 0.8, fill: game.player(cell.owner).color, class: "territory-glow" });
+          svg.appendChild(tg);
         }
 
         // Stelle di sfondo nelle celle "vuote" — brillano con ritmi sfalsati
@@ -1166,7 +1205,7 @@
     const svg = $("board"); if (!svg) return;
     const a = hexCenter(fq, fr), b = hexCenter(tq, tr);
     const g = svgEl("g", { class: "move-arrow" }); g.style.color = color;
-    g.appendChild(svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: color, "stroke-width": 4.5, "stroke-linecap": "round" }));
+    g.appendChild(svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: color, "stroke-width": 4.5, "stroke-linecap": "round", "stroke-dasharray": "10 7", class: "arrow-flow" }));
     const ang = Math.atan2(b.y - a.y, b.x - a.x), s = 13;
     const p1x = b.x - s * Math.cos(ang - 0.45), p1y = b.y - s * Math.sin(ang - 0.45);
     const p2x = b.x - s * Math.cos(ang + 0.45), p2y = b.y - s * Math.sin(ang + 0.45);
@@ -1575,6 +1614,11 @@
   }
 
   function onRoundResolved(res) {
+    // colpi a segno → la finestra trema
+    if (res.killed > 0) {
+      const box = $("modal").querySelector(".modal-box");
+      if (box) { box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake"); setTimeout(() => box.classList.remove("shake"), 450); }
+    }
     if (res.finished) { combatFinished(); }
     else { combatCtx.session.startRound(); renderCombat(); }
   }
