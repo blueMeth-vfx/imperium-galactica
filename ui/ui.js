@@ -309,12 +309,82 @@
     }
     events.slice(0, 6).forEach((e) => flashBanner(e[0], e[1], e[2], e[3], ""));
   }
-  // Centra lo scroll della plancia (che ora è più grande della finestra)
-  function centerBoard() {
-    requestAnimationFrame(() => {
-      const wrap = $("boardWrap"), b = $("board");
-      if (wrap && b) { wrap.scrollLeft = (b.scrollWidth - wrap.clientWidth) / 2; wrap.scrollTop = (b.scrollHeight - wrap.clientHeight) / 2; }
-    });
+  // ---------------------------------------------------------------- VISTA DINAMICA (zoom/pan)
+  let boardView = { zoom: 1, cx: null, cy: null };
+  let boardPan = null, justPanned = false;
+  function centerBoard() { initBoardControls(); boardView = { zoom: 1, cx: null, cy: null }; applyBoardView(); updateZoomLabel(); }
+
+  function applyBoardView() {
+    const svg = $("board"); if (!svg || !svg._full) return;
+    const f = svg._full;
+    const z = Math.max(1, Math.min(4, boardView.zoom)); boardView.zoom = z;
+    const w = f.w / z, h = f.h / z;
+    let cx = boardView.cx == null ? f.w / 2 : boardView.cx;
+    let cy = boardView.cy == null ? f.h / 2 : boardView.cy;
+    cx = Math.max(w / 2, Math.min(f.w - w / 2, cx));
+    cy = Math.max(h / 2, Math.min(f.h - h / 2, cy));
+    boardView.cx = cx; boardView.cy = cy;
+    svg.setAttribute("viewBox", (cx - w / 2).toFixed(1) + " " + (cy - h / 2).toFixed(1) + " " + w.toFixed(1) + " " + h.toFixed(1));
+  }
+  function zoomBy(factor, clientX, clientY) {
+    const svg = $("board"); if (!svg || !svg._full) return;
+    const nz = Math.max(1, Math.min(4, boardView.zoom * factor));
+    if (nz === boardView.zoom) { return; }
+    const f = svg._full;
+    if (clientX != null) {
+      const vb = svg.viewBox.baseVal, rect = svg.getBoundingClientRect();
+      const scale = Math.min(rect.width / vb.width, rect.height / vb.height);
+      const offX = (rect.width - vb.width * scale) / 2, offY = (rect.height - vb.height * scale) / 2;
+      const relx = (clientX - rect.left - offX) / (vb.width * scale);
+      const rely = (clientY - rect.top - offY) / (vb.height * scale);
+      const bx = vb.x + relx * vb.width, by = vb.y + rely * vb.height;
+      const nw = f.w / nz, nh = f.h / nz;
+      boardView.cx = bx - (relx - 0.5) * nw; boardView.cy = by - (rely - 0.5) * nh;
+    }
+    boardView.zoom = nz;
+    applyBoardView(); updateZoomLabel();
+  }
+  function focusCell(q, r) { // centra la vista su una cella (usata dopo uno spostamento, se zoomati)
+    if (boardView.zoom <= 1) return;
+    const c = hexCenter(q, r); boardView.cx = c.x; boardView.cy = c.y; applyBoardView();
+  }
+  function onBoardWheel(e) { if (!$("board") || !$("board")._full) return; e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY); }
+  function onBoardPointerDown(e) {
+    if (boardView.zoom <= 1) return;
+    const svg = $("board"); if (!svg) return; const vb = svg.viewBox.baseVal, rect = svg.getBoundingClientRect();
+    const scale = Math.min(rect.width / vb.width, rect.height / vb.height);
+    boardPan = { x: e.clientX, y: e.clientY, cx: boardView.cx, cy: boardView.cy, scale: scale, moved: false };
+    window.addEventListener("pointermove", onBoardPointerMove);
+    window.addEventListener("pointerup", onBoardPointerUp);
+  }
+  function onBoardPointerMove(e) {
+    if (!boardPan) return;
+    const dx = e.clientX - boardPan.x, dy = e.clientY - boardPan.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) boardPan.moved = true;
+    boardView.cx = boardPan.cx - dx / boardPan.scale; boardView.cy = boardPan.cy - dy / boardPan.scale;
+    applyBoardView();
+  }
+  function onBoardPointerUp() {
+    if (boardPan && boardPan.moved) { justPanned = true; setTimeout(() => { justPanned = false; }, 60); }
+    boardPan = null;
+    window.removeEventListener("pointermove", onBoardPointerMove);
+    window.removeEventListener("pointerup", onBoardPointerUp);
+  }
+  function updateZoomLabel() { const l = $("zoomLabel"); if (l) l.textContent = Math.round(boardView.zoom * 100) + "%"; }
+  function initBoardControls() {
+    const wrap = $("boardWrap"); if (!wrap) return;
+    if (!wrap._zoomInit) {
+      wrap.addEventListener("wheel", onBoardWheel, { passive: false });
+      wrap.addEventListener("pointerdown", onBoardPointerDown);
+      wrap._zoomInit = true;
+    }
+    if ($("boardZoom")) return;
+    const z = htmlEl("div"); z.id = "boardZoom";
+    z.innerHTML = '<button id="zoomIn" title="Ingrandisci">＋</button><span id="zoomLabel">100%</span><button id="zoomOut" title="Riduci">－</button><button id="zoomReset" title="Adatta alla finestra">⤢</button>';
+    wrap.appendChild(z);
+    $("zoomIn").onclick = () => zoomBy(1.3);
+    $("zoomOut").onclick = () => zoomBy(1 / 1.3);
+    $("zoomReset").onclick = () => { boardView = { zoom: 1, cx: null, cy: null }; applyBoardView(); updateZoomLabel(); };
   }
 
   // ---------------------------------------------------------------- RENDER
@@ -324,6 +394,7 @@
     renderPlayerPanel();
     renderSelection();
     renderLog();
+    updatePlanetPin();
   }
 
   const PHASE_LABELS = ["Riscossione", "Produzione", "Movimento", "Costruzione"];
@@ -596,10 +667,11 @@
     hidePlanetCard();
     const w = Hex.toPixel(CFG.COLS - 1, 0, HEX_SIZE).x + 2 * MARGIN;
     const h = Hex.toPixel(0, CFG.ROWS - 1, HEX_SIZE).y + 2 * MARGIN + HEX_SIZE;
-    // La plancia si adatta interamente alla finestra (si vede tutto il tabellone)
-    svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+    // Dimensioni piene del tabellone; il viewBox effettivo dipende da zoom/pan (vista dinamica)
+    svg._full = { w: w, h: h };
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
     svg.removeAttribute("width"); svg.removeAttribute("height");
+    applyBoardView();
     svg.innerHTML = boardDefs();
 
     const reach = reachableSet();
@@ -699,13 +771,14 @@
     }
   }
 
-  // -------- Plancia del pianeta al passaggio del mouse (edifici, difese, statistiche)
-  function showPlanetCard(q, r, e) {
-    const cell = game.cell(q, r);
-    if (!cell || cell.type !== "planet" || !cell.explored) return;
+  // -------- Plancia del pianeta (edifici, difese, statistiche)
+  // Si mostra al passaggio del mouse E resta "fissata" quando selezioni/conquisti un
+  // pianeta (in alto a sinistra del tabellone), perché la nave sopra il pianeta
+  // impedirebbe l'hover.
+  let pinnedPlanet = null; // cellKey del pianeta selezionato
+  function planetCardEl() { let c = $("planetCard"); if (!c) { c = htmlEl("div"); c.id = "planetCard"; document.body.appendChild(c); } return c; }
+  function planetHTML(cell) {
     const d = cell.planet.data;
-    let card = $("planetCard");
-    if (!card) { card = htmlEl("div"); card.id = "planetCard"; document.body.appendChild(card); }
     const owner = cell.owner != null ? game.player(cell.owner) : null;
     const b = cell.buildings;
     const bList = [["🚀 Fab. Navale", b.fabbricaNavale], ["🏭 Fab. Carri", b.fabbricaCarri], ["🏛 Tesoreria", b.tesoreria], ["🛰 Cannone", b.cannone], ["🗼 Torretta", b.torretta]].filter((x) => x[1] > 0);
@@ -729,24 +802,59 @@
         (b.torretta ? '<span class="pc-tag">🗼 Torretta ×' + b.torretta + "</span>" : "") +
         (!cell.garrison && !b.cannone && !b.torretta ? '<span class="pc-none">indifeso</span>' : "") + "</div>";
     }
-    card.innerHTML = html;
+    return html;
+  }
+  // Hover: mostra la scheda vicino al cursore
+  function showPlanetCard(q, r, e) {
+    const cell = game.cell(q, r);
+    if (!cell || cell.type !== "planet" || !cell.explored) return;
+    const card = planetCardEl();
+    card.innerHTML = planetHTML(cell);
+    card.dataset.mode = "hover";
     card.classList.add("show");
     movePlanetCard(e);
   }
   function movePlanetCard(e) {
     const card = $("planetCard");
-    if (!card || !card.classList.contains("show") || !e) return;
-    const pad = 16, w = card.offsetWidth || 240, h = card.offsetHeight || 200;
+    if (!card || !card.classList.contains("show") || card.dataset.mode !== "hover" || !e) return;
+    const pad = 16, w = card.offsetWidth || 244, h = card.offsetHeight || 200;
     let x = e.clientX + pad, y = e.clientY + pad;
     if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
     if (y + h > window.innerHeight - 8) y = Math.max(8, window.innerHeight - h - 8);
     card.style.left = x + "px"; card.style.top = y + "px";
   }
-  function hidePlanetCard() { const card = $("planetCard"); if (card) card.classList.remove("show"); }
+  // Fine hover: se un pianeta è selezionato, torna alla scheda fissata
+  function hidePlanetCard(force) {
+    const card = $("planetCard"); if (!card) return;
+    if (!force && pinnedPlanet) { const [q, r] = pinnedPlanet.split(",").map(Number); pinPlanetCard(q, r); return; }
+    if (card.dataset.mode === "hover" || force) card.classList.remove("show");
+  }
+  // Scheda "fissata" in alto a sinistra del tabellone (pianeta selezionato/conquistato)
+  function pinPlanetCard(q, r) {
+    const cell = game.cell(q, r);
+    if (!cell || cell.type !== "planet" || !cell.explored) { unpinPlanetCard(); return; }
+    pinnedPlanet = Hex.key(q, r);
+    const card = planetCardEl();
+    card.innerHTML = planetHTML(cell);
+    card.dataset.mode = "pin";
+    card.classList.add("show");
+    const wrap = $("boardWrap"); const rc = wrap ? wrap.getBoundingClientRect() : { left: 12, top: 70 };
+    card.style.left = (rc.left + 12) + "px"; card.style.top = (rc.top + 12) + "px";
+  }
+  function unpinPlanetCard() { pinnedPlanet = null; const card = $("planetCard"); if (card && card.dataset.mode === "pin") card.classList.remove("show"); }
+  // Allinea la scheda fissata alla selezione corrente (chiamata a fine render)
+  function updatePlanetPin() {
+    if (!sel.cellKey) { unpinPlanetCard(); return; }
+    const [q, r] = sel.cellKey.split(",").map(Number);
+    const cell = game.cell(q, r);
+    if (cell && cell.type === "planet" && cell.explored) pinPlanetCard(q, r);
+    else unpinPlanetCard();
+  }
 
   // ---------------------------------------------------------------- INTERAZIONE
   function onCellClick(q, r) {
     if (game.winner) return;
+    if (justPanned) return; // era un trascinamento della vista, non un clic sulla cella
     const p = game.player(game.currentPlayer);
     const key = Hex.key(q, r);
 
@@ -786,6 +894,9 @@
     }
     // Freccia a scomparsa dello spostamento
     if (ev.fromQ !== undefined && (ev.fromQ !== q || ev.fromR !== r)) showMoveArrow(ev.fromQ, ev.fromR, q, r, game.player(game.currentPlayer).color);
+    focusCell(q, r); // se la vista è zoomata, segue la flotta
+
+
 
     // Eventi visivi (banner) e finestre
     if (ev.asteroid) showAsteroidCard(ev.asteroid, ev.event === "destroyed");
@@ -1349,7 +1460,11 @@
     const ok = htmlEl("button", "primary", "OK");
     ok.onclick = () => {
       closeModalWide();
-      if (mySide === "A") sel.fleetId = (ev && game.fleetById(ev.attacker)) ? ev.attacker : null;
+      if (mySide === "A") {
+        const af = ev && game.fleetById(ev.attacker);
+        sel.fleetId = af ? ev.attacker : null;
+        if (af) sel.cellKey = Hex.key(af.q, af.r); // seleziona il pianeta conquistato → mostra la plancia
+      }
       render();
       if (game.winner != null) { showWin(); return; }
       if (onDone) { onDone(); return; }  // riprende il turno dell'IA dopo la difesa
@@ -1668,7 +1783,7 @@
     if (game.winner != null) { showWin(); return; }
     const p = game.player(game.currentPlayer);
     if (!onlineMode) maybeTurnSound();
-    maybeShowRiscossione();
+    if (!p.isAI) maybeShowRiscossione(); // per l'IA la riscossione è già nel riepilogo eventi (niente sovrapposizioni)
     if (p.isAI) {
       aiOverlay(true, aiName(p), p.color);
       const before = game.log.length;
@@ -1698,10 +1813,11 @@
     const newLines = game.log.slice(before);
     const newMoves = (game.moveLog || []).slice(moveBefore).filter((m) => m.owner === aiPlayer.id);
     sel = { fleetId: null, cellKey: null };
+    aiOverlay(false); // nascondi l'overlay PRIMA del riepilogo (i banner non ci vanno più sopra)
     render();
     // prima gli spostamenti (frecce + banner in basso), poi gli altri eventi
     playAIMoves(newMoves, aiPlayer, () => {
-      playAIEvents(newLines, () => { aiOverlay(false); checkTurn(); });
+      playAIEvents(newLines, () => { checkTurn(); });
     });
   }
 
