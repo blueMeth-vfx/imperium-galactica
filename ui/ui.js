@@ -309,29 +309,57 @@
     }
     events.slice(0, 6).forEach((e) => flashBanner(e[0], e[1], e[2], e[3], ""));
   }
-  // ---------------------------------------------------------------- VISTA DINAMICA (zoom/pan)
-  let boardView = { zoom: 1, cx: null, cy: null };
+  // ---------------------------------------------------------------- VISTA DINAMICA (zoom/pan FLUIDI)
+  // La vista non salta mai: scivola sempre verso un obiettivo (interpolazione rAF).
+  let boardView = { zoom: 1, cx: null, cy: null }; // vista corrente (renderizzata)
+  let viewTarget = null;                            // obiettivo verso cui la vista scivola
+  let viewRAF = null;
   let boardPan = null, justPanned = false;
-  function centerBoard() { initBoardControls(); boardView = { zoom: 1, cx: null, cy: null }; applyBoardView(); updateZoomLabel(); }
+  function centerBoard() { initBoardControls(); viewTarget = null; boardView = { zoom: 1, cx: null, cy: null }; applyBoardView(); updateZoomLabel(); }
 
-  function applyBoardView() {
-    const svg = $("board"); if (!svg || !svg._full) return;
+  function clampView(v) {
+    const svg = $("board"); if (!svg || !svg._full) return v;
     const f = svg._full;
-    const z = Math.max(1, Math.min(4, boardView.zoom)); boardView.zoom = z;
+    const z = Math.max(1, Math.min(4.5, v.zoom));
     const w = f.w / z, h = f.h / z;
-    let cx = boardView.cx == null ? f.w / 2 : boardView.cx;
-    let cy = boardView.cy == null ? f.h / 2 : boardView.cy;
+    let cx = v.cx == null ? f.w / 2 : v.cx, cy = v.cy == null ? f.h / 2 : v.cy;
     cx = Math.max(w / 2, Math.min(f.w - w / 2, cx));
     cy = Math.max(h / 2, Math.min(f.h - h / 2, cy));
-    boardView.cx = cx; boardView.cy = cy;
-    svg.setAttribute("viewBox", (cx - w / 2).toFixed(1) + " " + (cy - h / 2).toFixed(1) + " " + w.toFixed(1) + " " + h.toFixed(1));
+    return { zoom: z, cx: cx, cy: cy };
+  }
+  function applyBoardView() {
+    const svg = $("board"); if (!svg || !svg._full) return;
+    boardView = clampView(boardView);
+    const f = svg._full, w = f.w / boardView.zoom, h = f.h / boardView.zoom;
+    svg.setAttribute("viewBox", (boardView.cx - w / 2).toFixed(2) + " " + (boardView.cy - h / 2).toFixed(2) + " " + w.toFixed(2) + " " + h.toFixed(2));
+  }
+  function setViewTarget(t) {
+    viewTarget = clampView(Object.assign({}, clampView(boardView), t));
+    if (!viewRAF) viewStep();
+  }
+  function viewStep() {
+    viewRAF = requestAnimationFrame(() => {
+      if (!viewTarget) { viewRAF = null; return; }
+      const k = 0.16; // fattore di inseguimento: più basso = più morbido
+      boardView = clampView(boardView);
+      boardView.zoom += (viewTarget.zoom - boardView.zoom) * k;
+      boardView.cx += (viewTarget.cx - boardView.cx) * k;
+      boardView.cy += (viewTarget.cy - boardView.cy) * k;
+      const done = Math.abs(viewTarget.zoom - boardView.zoom) < 0.003 &&
+                   Math.abs(viewTarget.cx - boardView.cx) < 0.4 && Math.abs(viewTarget.cy - boardView.cy) < 0.4;
+      if (done) { boardView = Object.assign({}, viewTarget); viewTarget = null; }
+      applyBoardView(); updateZoomLabel();
+      if (viewTarget) viewStep(); else viewRAF = null;
+    });
   }
   function zoomBy(factor, clientX, clientY) {
     const svg = $("board"); if (!svg || !svg._full) return;
-    const nz = Math.max(1, Math.min(4, boardView.zoom * factor));
-    if (nz === boardView.zoom) { return; }
     const f = svg._full;
+    const cur = viewTarget || clampView(boardView);
+    const nz = Math.max(1, Math.min(4.5, cur.zoom * factor));
+    const t = { zoom: nz, cx: cur.cx, cy: cur.cy };
     if (clientX != null) {
+      // zoom ancorato al cursore: il punto sotto il mouse resta fermo
       const vb = svg.viewBox.baseVal, rect = svg.getBoundingClientRect();
       const scale = Math.min(rect.width / vb.width, rect.height / vb.height);
       const offX = (rect.width - vb.width * scale) / 2, offY = (rect.height - vb.height * scale) / 2;
@@ -339,20 +367,25 @@
       const rely = (clientY - rect.top - offY) / (vb.height * scale);
       const bx = vb.x + relx * vb.width, by = vb.y + rely * vb.height;
       const nw = f.w / nz, nh = f.h / nz;
-      boardView.cx = bx - (relx - 0.5) * nw; boardView.cy = by - (rely - 0.5) * nh;
+      t.cx = bx - (relx - 0.5) * nw; t.cy = by - (rely - 0.5) * nh;
     }
-    boardView.zoom = nz;
-    applyBoardView(); updateZoomLabel();
+    setViewTarget(t);
   }
-  function focusCell(q, r) { // centra la vista su una cella (usata dopo uno spostamento, se zoomati)
-    if (boardView.zoom <= 1) return;
-    const c = hexCenter(q, r); boardView.cx = c.x; boardView.cy = c.y; applyBoardView();
+  function focusCell(q, r) { // segue la flotta se la vista è zoomata
+    if (boardView.zoom <= 1.02 && !viewTarget) return;
+    const c = hexCenter(q, r); setViewTarget({ cx: c.x, cy: c.y });
+  }
+  // Vola dolcemente su una cella (usato dalle carte-pianeta)
+  function flyToCell(q, r, zoom) {
+    const c = hexCenter(q, r);
+    setViewTarget({ zoom: zoom || Math.max(2.2, boardView.zoom), cx: c.x, cy: c.y });
   }
   function onBoardWheel(e) { if (!$("board") || !$("board")._full) return; e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY); }
   function onBoardPointerDown(e) {
-    if (boardView.zoom <= 1) return;
+    if (boardView.zoom <= 1 && !viewTarget) return;
     const svg = $("board"); if (!svg) return; const vb = svg.viewBox.baseVal, rect = svg.getBoundingClientRect();
     const scale = Math.min(rect.width / vb.width, rect.height / vb.height);
+    viewTarget = null; // il trascinamento prende il controllo diretto della vista
     boardPan = { x: e.clientX, y: e.clientY, cx: boardView.cx, cy: boardView.cy, scale: scale, moved: false };
     window.addEventListener("pointermove", onBoardPointerMove);
     window.addEventListener("pointerup", onBoardPointerUp);
@@ -371,8 +404,39 @@
     window.removeEventListener("pointerup", onBoardPointerUp);
   }
   function updateZoomLabel() { const l = $("zoomLabel"); if (l) l.textContent = Math.round(boardView.zoom * 100) + "%"; }
+
+  // ---------------------------------------------------------------- STELLE CADENTI
+  // Ogni 4-10 secondi una cometa attraversa un tratto casuale del tabellone.
+  let shootingTimer = null;
+  function startShootingStars() {
+    if (shootingTimer) return;
+    const schedule = () => { shootingTimer = setTimeout(() => { spawnShootingStar(); schedule(); }, 4000 + Math.random() * 6000); };
+    schedule();
+  }
+  function spawnShootingStar() {
+    const svg = $("board");
+    if (!svg || !svg._full || $("game").classList.contains("hidden")) return;
+    const f = svg._full;
+    // punto di partenza e direzione casuali (traiettoria diagonale)
+    const x0 = Math.random() * f.w, y0 = Math.random() * f.h * 0.7;
+    const ang = (20 + Math.random() * 50) * (Math.PI / 180) * (Math.random() < 0.5 ? 1 : -1);
+    const len = 120 + Math.random() * 180;
+    const dx = Math.cos(ang) * len, dy = Math.abs(Math.sin(ang)) * len * 0.6;
+    const g = svgEl("g", { class: "shooting-star" });
+    // scia (dietro la testa, direzione opposta al moto)
+    const tail = svgEl("line", { x1: 0, y1: 0, x2: -dx * 0.22, y2: -dy * 0.22, stroke: "#dff0ff", "stroke-width": 1.6, "stroke-linecap": "round", opacity: 0.85 });
+    const head = svgEl("circle", { cx: 0, cy: 0, r: 1.7, fill: "#ffffff" });
+    g.appendChild(tail); g.appendChild(head);
+    const dur = (0.9 + Math.random() * 0.7).toFixed(2);
+    const at = svgEl("animateTransform", { attributeName: "transform", type: "translate", from: x0 + " " + y0, to: (x0 + dx) + " " + (y0 + dy), dur: dur + "s", begin: "0s", fill: "freeze" });
+    const fade = svgEl("animate", { attributeName: "opacity", values: "0;1;1;0", keyTimes: "0;0.15;0.7;1", dur: dur + "s", begin: "0s", fill: "freeze" });
+    g.appendChild(at); g.appendChild(fade);
+    svg.appendChild(g);
+    setTimeout(() => { try { g.remove(); } catch (e) {} }, dur * 1000 + 150);
+  }
   function initBoardControls() {
     const wrap = $("boardWrap"); if (!wrap) return;
+    startShootingStars();
     if (!wrap._zoomInit) {
       wrap.addEventListener("wheel", onBoardWheel, { passive: false });
       wrap.addEventListener("pointerdown", onBoardPointerDown);
@@ -382,9 +446,9 @@
     const z = htmlEl("div"); z.id = "boardZoom";
     z.innerHTML = '<button id="zoomIn" title="Ingrandisci">＋</button><span id="zoomLabel">100%</span><button id="zoomOut" title="Riduci">－</button><button id="zoomReset" title="Adatta alla finestra">⤢</button>';
     wrap.appendChild(z);
-    $("zoomIn").onclick = () => zoomBy(1.3);
-    $("zoomOut").onclick = () => zoomBy(1 / 1.3);
-    $("zoomReset").onclick = () => { boardView = { zoom: 1, cx: null, cy: null }; applyBoardView(); updateZoomLabel(); };
+    $("zoomIn").onclick = () => zoomBy(1.35);
+    $("zoomOut").onclick = () => zoomBy(1 / 1.35);
+    $("zoomReset").onclick = () => setViewTarget({ zoom: 1, cx: null, cy: null });
   }
 
   // ---------------------------------------------------------------- RENDER
@@ -395,6 +459,60 @@
     renderSelection();
     renderLog();
     updatePlanetPin();
+    renderPlanetHand();
+  }
+
+  // ---------------------------------------------------------------- MANO DELLE CARTE-PIANETA
+  // I tuoi pianeti come carte "in mano" (ventaglio in basso): passa il mouse per
+  // vedere la carta completa con l'illustrazione animata; clic → la vista vola lì.
+  function handOwner() {
+    if (onlineMode) return myPlayerId >= 0 ? myPlayerId : null;
+    const p = game.player(game.currentPlayer);
+    if (!p.isAI) return p.id;
+    const h = game.players.find((x) => !x.isAI && x.alive !== false);
+    return h ? h.id : null;
+  }
+  function renderPlanetHand() {
+    let hand = $("planetHand");
+    if (!hand) { hand = htmlEl("div"); hand.id = "planetHand"; document.body.appendChild(hand); }
+    hand.innerHTML = "";
+    if (!game || $("game").classList.contains("hidden")) return;
+    const pid = handOwner();
+    if (pid == null) return;
+    const planets = game.planetsOf(pid);
+    const n = planets.length;
+    if (!n) return;
+    const pl = game.player(pid);
+    planets.forEach((cell, i) => {
+      const mid = (n - 1) / 2;
+      const card = htmlEl("div", "pcard");
+      card.style.setProperty("--rot", ((i - mid) * 5) + "deg");
+      card.style.setProperty("--lift", (Math.abs(i - mid) * 8) + "px");
+      card.style.setProperty("--fc", pl.color);
+      card.innerHTML = pcardHTML(cell);
+      card.onclick = () => { sel.cellKey = Hex.key(cell.q, cell.r); sel.fleetId = null; flyToCell(cell.q, cell.r); render(); };
+      card.onmouseenter = () => pulseCell(cell.q, cell.r); // evidenzia il pianeta sul tabellone
+      hand.appendChild(card);
+    });
+  }
+  // Illustrazione CSS del pianeta (sfera con superficie in rotazione)
+  function planetArtHTML(tipo, q, r) {
+    const dur = (9 + hash(q, r, 5) * 8).toFixed(1);
+    return '<div class="planet-art pa-' + tipo + '" style="--dur:' + dur + 's"><div class="surf"></div><div class="hl"></div></div>';
+  }
+  function pcardHTML(cell) {
+    const d = cell.planet.data, b = cell.buildings;
+    const bIcons = [["🚀", b.fabbricaNavale], ["🏭", b.fabbricaCarri], ["🏛", b.tesoreria], ["🛰", b.cannone], ["🗼", b.torretta]]
+      .filter((x) => x[1] > 0).map((x) => '<span class="pcd-tag">' + x[0] + x[1] + "</span>").join("");
+    return '<div class="pcd-band"></div>' +
+      planetArtHTML(d.tipo, cell.q, cell.r) +
+      '<div class="pcd-name">' + esc(d.nome) + '</div>' +
+      '<div class="pcd-type">' + (PLANET_EMOJI[d.tipo] || "") + " " + d.tipo + "</div>" +
+      '<div class="pcd"><div class="pcd-stats">' +
+      "<span>⚙️×" + d.produttivita + "</span><span>💰×" + d.economia + "</span>" +
+      "<span>⛽×" + d.moltMaterie.carburante + "</span><span>🔩×" + d.moltMaterie.metallo + "</span><span>🪨×" + d.moltMaterie.pietra + "</span></div>" +
+      '<div class="pcd-row">🏗 ' + (bIcons || '<span class="pcd-none">nessun edificio</span>') + "</div>" +
+      '<div class="pcd-row">🛡 🪖' + cell.garrison + (b.cannone ? " 🛰" + b.cannone : "") + (b.torretta ? " 🗼" + b.torretta : "") + "</div></div>";
   }
 
   const PHASE_LABELS = ["Riscossione", "Produzione", "Movimento", "Costruzione"];
@@ -535,6 +653,10 @@
       '<radialGradient id="g-unexplored" cx="50%" cy="38%" r="80%"><stop offset="0%" stop-color="#3a3f4d"/><stop offset="55%" stop-color="#22252e"/><stop offset="100%" stop-color="#0a0b10"/></radialGradient>' +
       '<linearGradient id="g-side" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3a5894"/><stop offset="35%" stop-color="#1c2c4e"/><stop offset="100%" stop-color="#04060e"/></linearGradient>' +
       pg + shipGrads() +
+      // Ombreggiatura sferica: luce in alto a sinistra, terminatore scuro sul bordo
+      '<radialGradient id="p-shade" cx="36%" cy="30%" r="78%">' +
+      '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.18"/><stop offset="34%" stop-color="#000000" stop-opacity="0"/>' +
+      '<stop offset="72%" stop-color="#000000" stop-opacity="0.28"/><stop offset="100%" stop-color="#000000" stop-opacity="0.82"/></radialGradient>' +
       '<filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
       '<filter id="softsh" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.8" flood-color="#000" flood-opacity="0.6"/></filter>' +
       '<filter id="pcsh" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="2.5" stdDeviation="2.2" flood-color="#000" flood-opacity="0.55"/></filter>' +
@@ -662,6 +784,60 @@
     }
   }
 
+  // Colori dei "continenti"/dettagli di superficie per tipo di pianeta [scuro, chiaro]
+  const SURF_COLORS = {
+    Fuoco: ["#7a1602", "#ffd678"],
+    Ghiaccio: ["#bfe6ff", "#ffffff"],
+    Terra: ["#1e7a45", "#e8f4ff"],
+    Roccia: ["#463a26", "#8c7a55"],
+  };
+  // Pianeta "3D": sfera con superficie in lenta rotazione (loop senza giunture),
+  // alone atmosferico, calotte polari (ghiaccio) e ombreggiatura sferica.
+  function drawPlanet3D(svg, q, r, c, d) {
+    const col = PLANET_COLORS[d.tipo] || "#8ab";
+    const R = 15, py = c.y - 4;
+    // alone atmosferico pulsante
+    const halo = svgEl("circle", { cx: c.x, cy: py, r: R + 4.5, fill: col, class: "planet-halo" });
+    svg.appendChild(halo);
+    // clip circolare: tutto ciò che ruota resta dentro la sfera
+    const clipId = "pclip-" + q + "-" + r;
+    const cp = svgEl("clipPath", { id: clipId });
+    cp.appendChild(svgEl("circle", { cx: c.x, cy: py, r: R }));
+    svg.appendChild(cp);
+    const g = svgEl("g", { "clip-path": "url(#" + clipId + ")", class: "planet-body" });
+    g.appendChild(svgEl("circle", { cx: c.x, cy: py, r: R, fill: "url(#planet-" + d.tipo + ")" }));
+    // superficie in rotazione: blob duplicati a ±periodo → il loop è invisibile
+    const W = 2 * R;
+    const surf = svgEl("g", { opacity: 0.55 });
+    const cols = SURF_COLORS[d.tipo] || ["#333", "#ccc"];
+    for (let i = 0; i < 4; i++) {
+      const bx = c.x - R + hash(q, r, i + 30) * W;
+      const by = py - R * 0.7 + hash(q, r, i + 60) * R * 1.4;
+      const rx = 3.5 + hash(q, r, i + 90) * 5, ry = 2 + hash(q, r, i + 120) * 3;
+      const fill = cols[i % 2];
+      for (const off of [-W, 0, W]) surf.appendChild(svgEl("ellipse", { cx: (bx + off).toFixed(1), cy: by.toFixed(1), rx: rx.toFixed(1), ry: ry.toFixed(1), fill: fill }));
+    }
+    const dur = (10 + hash(q, r, 7) * 9).toFixed(1);
+    const at = svgEl("animateTransform", { attributeName: "transform", type: "translate", from: "0 0", to: W + " 0", dur: dur + "s", repeatCount: "indefinite" });
+    surf.appendChild(at);
+    g.appendChild(surf);
+    // calotte polari per i pianeti di ghiaccio
+    if (d.tipo === "Ghiaccio") {
+      g.appendChild(svgEl("ellipse", { cx: c.x, cy: py - R + 2.2, rx: 8.5, ry: 3.6, fill: "#f2faff", opacity: 0.92 }));
+      g.appendChild(svgEl("ellipse", { cx: c.x, cy: py + R - 2, rx: 7.5, ry: 3.2, fill: "#f2faff", opacity: 0.85 }));
+    }
+    // crepe di lava incandescenti per i pianeti di fuoco
+    if (d.tipo === "Fuoco") {
+      const lv = svgEl("path", { d: "M" + (c.x - 9) + " " + (py + 3) + " q4 -3 8 0 t8 -1", fill: "none", stroke: "#ffe9a8", "stroke-width": 1.1, opacity: 0.8, class: "lava-glow" });
+      g.appendChild(lv);
+    }
+    // ombreggiatura sferica (luce da in alto a sinistra) — è questa a dare il volume
+    g.appendChild(svgEl("circle", { cx: c.x, cy: py, r: R, fill: "url(#p-shade)" }));
+    svg.appendChild(g);
+    // riflesso speculare
+    svg.appendChild(svgEl("ellipse", { cx: c.x - 5, cy: py - 6, rx: 4.5, ry: 2.6, fill: "#ffffff", opacity: 0.28, class: "planet-body" }));
+  }
+
   function renderBoard() {
     const svg = $("board");
     hidePlanetCard();
@@ -712,12 +888,14 @@
           continue;
         }
 
-        // Stelle di sfondo nelle celle "vuote"
+        // Stelle di sfondo nelle celle "vuote" — brillano con ritmi sfalsati
         if (cell.type === "space" || cell.type === "market" || cell.type === "casino") {
           for (let i = 0; i < 5; i++) {
             const sx = c.x + (hash(q, r, i) - 0.5) * S * 1.3;
             const sy = c.y + (hash(q, r, i + 50) - 0.5) * S * 1.3;
-            svg.appendChild(svgEl("circle", { cx: sx.toFixed(1), cy: sy.toFixed(1), r: (0.5 + hash(q, r, i + 9) * 1.1).toFixed(1), fill: "#cfe0ff", opacity: (0.25 + hash(q, r, i + 3) * 0.5).toFixed(2) }));
+            const st = svgEl("circle", { cx: sx.toFixed(1), cy: sy.toFixed(1), r: (0.5 + hash(q, r, i + 9) * 1.1).toFixed(1), fill: "#cfe0ff", opacity: (0.25 + hash(q, r, i + 3) * 0.5).toFixed(2), class: i < 3 ? "star-tw" : "" });
+            if (i < 3) st.setAttribute("style", "animation-delay:" + (hash(q, r, i + 11) * 4).toFixed(1) + "s;animation-duration:" + (2.2 + hash(q, r, i + 13) * 3).toFixed(1) + "s");
+            svg.appendChild(st);
           }
         }
 
@@ -728,14 +906,10 @@
           svg.appendChild(svgEl("ellipse", { cx: c.x, cy: c.y + 13, rx: 13, ry: 4, fill: "#000000", opacity: 0.45 }));
           // anello del proprietario
           if (owner) svg.appendChild(svgEl("circle", { cx: c.x, cy: c.y - 4, r: 19, fill: "none", stroke: owner.color, "stroke-width": 3, opacity: 0.95 }));
-          // corpo del pianeta
-          svg.appendChild(svgEl("circle", { cx: c.x, cy: c.y - 4, r: 15, fill: "url(#planet-" + d.tipo + ")", class: "planet-body" }));
-          // sheen
-          svg.appendChild(svgEl("ellipse", { cx: c.x - 4, cy: c.y - 9, rx: 5, ry: 3, fill: "#ffffff", opacity: 0.35 }));
-          // emoji di tipo (riconoscibilità immediata)
-          const pe = svgEl("text", { x: c.x, y: c.y + 2, class: "planet-emoji" }); pe.textContent = PLANET_EMOJI[d.tipo] || ""; svg.appendChild(pe);
-          // nome
-          const nm = svgEl("text", { x: c.x, y: c.y + 19, class: "planet-name" }); nm.textContent = d.nome; svg.appendChild(nm);
+          // pianeta 3D con superficie in rotazione
+          drawPlanet3D(svg, q, r, c, d);
+          // nome (emoji di tipo integrata)
+          const nm = svgEl("text", { x: c.x, y: c.y + 19, class: "planet-name" }); nm.textContent = (PLANET_EMOJI[d.tipo] || "") + " " + d.nome; svg.appendChild(nm);
           const tinfo = svgEl("text", { x: c.x, y: c.y + 29, class: "cell-label" });
           tinfo.textContent = "▲" + d.produttivita + "  $" + d.economia; svg.appendChild(tinfo);
           if (owner) {
@@ -744,17 +918,27 @@
             if (cell.garrison > 0) { const gt = svgEl("text", { x: c.x + 12, y: c.y - 18, class: "badge-mini" }); gt.textContent = "🛡" + cell.garrison; svg.appendChild(gt); }
           }
         } else if (cell.type === "asteroids") {
+          // rocce che fluttuano lentamente su e giù (ognuna col suo ritmo)
           for (let i = 0; i < 6; i++) {
             const ax = c.x + (hash(q, r, i) - 0.5) * S * 1.2;
             const ay = c.y + (hash(q, r, i + 20) - 0.5) * S * 1.1;
-            svg.appendChild(svgEl("circle", { cx: ax.toFixed(1), cy: ay.toFixed(1), r: (2 + hash(q, r, i + 7) * 3).toFixed(1), fill: "#8c7a55", stroke: "#5e4f33", "stroke-width": 0.8, opacity: 0.92 }));
+            const rock = svgEl("circle", { cx: ax.toFixed(1), cy: ay.toFixed(1), r: (2 + hash(q, r, i + 7) * 3).toFixed(1), fill: "#8c7a55", stroke: "#5e4f33", "stroke-width": 0.8, opacity: 0.92, class: "ast-bob" });
+            rock.setAttribute("style", "animation-delay:" + (hash(q, r, i + 33) * 5).toFixed(1) + "s;animation-duration:" + (3.5 + hash(q, r, i + 44) * 4).toFixed(1) + "s");
+            svg.appendChild(rock);
           }
           const lbl = svgEl("text", { x: c.x, y: c.y + 28, class: "cell-label" }); lbl.textContent = "Asteroidi"; svg.appendChild(lbl);
         } else if (cell.type === "market") {
           const ic = svgEl("text", { x: c.x, y: c.y + 4, class: "tile-icon" }); ic.textContent = "🛰"; svg.appendChild(ic);
+          // satellite che orbita attorno al mercato
+          const orb = svgEl("g");
+          orb.appendChild(svgEl("ellipse", { cx: c.x, cy: c.y - 2, rx: 20, ry: 8, fill: "none", stroke: "#5fd6ff", "stroke-width": 0.6, opacity: 0.35 }));
+          const sat = svgEl("circle", { cx: c.x + 20, cy: c.y - 2, r: 1.8, fill: "#aee8ff", class: "mk-sat" });
+          const oa = svgEl("animateTransform", { attributeName: "transform", type: "rotate", from: "0 " + c.x + " " + (c.y - 2), to: "360 " + c.x + " " + (c.y - 2), dur: "9s", repeatCount: "indefinite" });
+          sat.appendChild(oa); orb.appendChild(sat); svg.appendChild(orb);
           const lbl = svgEl("text", { x: c.x, y: c.y + 28, class: "cell-label" }); lbl.textContent = "Mercato"; svg.appendChild(lbl);
         } else if (cell.type === "casino") {
-          const ic = svgEl("text", { x: c.x, y: c.y + 4, class: "tile-icon" }); ic.textContent = "🎲"; svg.appendChild(ic);
+          const cg = svgEl("circle", { cx: c.x, cy: c.y - 3, r: 15, fill: "#c05fff", class: "casino-glow" }); svg.appendChild(cg);
+          const ic = svgEl("text", { x: c.x, y: c.y + 4, class: "tile-icon casino-dice" }); ic.textContent = "🎲"; svg.appendChild(ic);
           const lbl = svgEl("text", { x: c.x, y: c.y + 28, class: "cell-label" }); lbl.textContent = "Casinò"; svg.appendChild(lbl);
         }
         if (cell.startOf != null) {
@@ -1879,6 +2063,9 @@
 
   // ---------------------------------------------------------------- INIT
   function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+  // Hook di sviluppo (ispezione dello stato dalla console)
+  window.IGDebug = { get game() { return game; }, render: () => render() };
 
   window.addEventListener("DOMContentLoaded", () => {
     buildPlayerRows();
