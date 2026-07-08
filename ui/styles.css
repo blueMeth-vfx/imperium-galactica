@@ -424,12 +424,14 @@ button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation;
 .sd-dir { font-size: 14px; font-weight: 400; color: var(--muted); margin-top: 12px; }
 
 /* ---------- Chat online ---------- */
-#chatWidget { position: fixed; right: 16px; bottom: 16px; width: 300px; z-index: 58;
+#chatWidget { position: fixed; left: 16px; bottom: 16px; width: 300px; z-index: 58;
   background: linear-gradient(180deg, rgba(14,22,48,.98), rgba(9,14,32,.98)); border: 1px solid var(--border-bright);
   border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.55); overflow: hidden; }
 #chatWidget.hidden { display: none; }
-#chatHeader { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; font-weight: 700; font-size: 14px;
+#chatHeader { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: grab; font-weight: 700; font-size: 14px;
   background: rgba(58,120,255,.14); border-bottom: 1px solid var(--border-bright); user-select: none; }
+#chatHeader:active { cursor: grabbing; }
+#chatHeader::before { content: "⠿"; color: var(--muted); font-size: 13px; opacity: .7; }
 #chatBadge { background: #e23b3b; color: #fff; font-size: 11px; font-weight: 800; border-radius: 10px; padding: 0 6px; min-width: 18px; text-align: center; }
 #chatBadge:empty { display: none; }
 #chatToggle { margin-left: auto; color: var(--muted); }
@@ -441,3 +443,56 @@ button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation;
 #chatInputRow { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #16213f; }
 #chatInput { flex: 1; padding: 7px 9px; background: #070d20; border: 1px solid var(--border); color: var(--text); border-radius: 7px; font-size: 13px; }
 #chatInput:focus { outline: none; border-color: var(--accent); }
+
+/* ============================================================
+   Aggiornamenti v33: audio, contrasto tabellone, diario,
+   plancia pianeta al passaggio del mouse
+   ============================================================ */
+
+/* Pulsante audio (mute) */
+#muteToggle.on { border-color: var(--accent); color: #cfe0ff; }
+
+/* Celle NON esplorate: nettamente distinte (grigio scuro + bordo tratteggiato) */
+.hex-unexplored { stroke: rgba(150,160,180,.45); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.hex-unexplored:hover { filter: brightness(1.5); stroke: rgba(190,200,220,.7); }
+.fog { font-size: 26px; fill: #8b97b5; text-anchor: middle; pointer-events: none; font-weight: 800; opacity: .8; }
+
+/* Le decorazioni SVG non intercettano il mouse: hover/click restano sull'esagono */
+.planet-body, .planet-emoji, .planet-name, .cell-label, .tile-icon, .badge-mini,
+.inv-money, .inv-count, .pawn-count { pointer-events: none; }
+
+/* ---------- Diario di gioco più leggibile ---------- */
+#logBody { font-size: 13px; line-height: 1.5; color: #cdd7ec; }
+#logBody div { padding: 0; border-bottom: none; }
+.log-entry { padding: 4px 8px; margin-bottom: 3px;
+  border-left: 3px solid #45557f; background: rgba(255,255,255,.025); border-radius: 4px; }
+.log-entry.neutral { border-left-color: #37507a; color: #aebbd6; }
+.log-entry.sub { font-size: 12px; padding: 2px 8px 2px 16px; margin-bottom: 1px;
+  border-left-color: transparent; background: transparent; color: #93a1c2; opacity: .92; }
+.log-entry .lg-fac { font-weight: 800; }
+.log-turn { text-align: center; font-weight: 800; font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--gold); margin: 8px 0 5px; padding: 3px 0;
+  border-top: 1px dashed #2a3a63; border-bottom: 1px dashed #2a3a63; }
+
+/* ---------- Plancia del pianeta (hover) ---------- */
+#planetCard { position: fixed; z-index: 70; width: 244px; pointer-events: none; opacity: 0;
+  transform: translateY(4px); transition: opacity .12s ease, transform .12s ease;
+  background: linear-gradient(180deg, rgba(15,23,50,.98), rgba(8,12,28,.98));
+  border: 1px solid var(--border-bright); border-radius: 12px; padding: 12px 13px;
+  box-shadow: 0 16px 44px rgba(0,0,0,.6); font-size: 12.5px; }
+#planetCard.show { opacity: 1; transform: translateY(0); }
+#planetCard .pc-h { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+#planetCard .pc-emoji { font-size: 30px; filter: drop-shadow(0 0 6px var(--pc)); }
+#planetCard .pc-name { font-weight: 800; font-size: 15px; color: #eaf1ff; }
+#planetCard .pc-type { font-size: 11px; color: var(--muted); }
+#planetCard .pc-owner { display: flex; align-items: center; gap: 6px; font-weight: 700; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid #1b2949; }
+#planetCard .pc-owner.free { color: #7fd39a; }
+#planetCard .pc-owner .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+#planetCard .pc-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 8px; color: #c3cfe8; }
+#planetCard .pc-sec { margin-top: 8px; }
+#planetCard .pc-sec-t { font-size: 11px; font-weight: 800; letter-spacing: .04em; color: var(--muted);
+  text-transform: uppercase; margin-bottom: 5px; }
+#planetCard .pc-tag { display: inline-block; background: rgba(90,120,200,.16); border: 1px solid #2b3d68;
+  border-radius: 6px; padding: 2px 7px; margin: 0 4px 4px 0; font-size: 11.5px; color: #dbe5fb; }
+#planetCard .pc-none { color: var(--muted); font-style: italic; }

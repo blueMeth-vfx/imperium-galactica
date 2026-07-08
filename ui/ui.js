@@ -6,6 +6,7 @@
   const IG = window.IG;
   const CFG = IG.CONFIG;
   const Hex = IG.Hex;
+  const Snd = window.IGSound || { resume() {}, click() {}, turnStart() {}, passTurn() {}, chatSend() {}, chatReceive() {}, dice() {}, startMusic() {}, stopMusic() {}, toggle() { return true; }, muted: false };
   const SVGNS = "http://www.w3.org/2000/svg";
   const HEX_SIZE = 40;
   const MARGIN = HEX_SIZE + 52; // spazio extra per gli inventari agli angoli (sopra/sotto)
@@ -21,6 +22,8 @@
   let myPlayerId = -1;       // il mio seat/fazione online
   let applyingRemote = false; // true mentre applico uno stato ricevuto (evita loop di sync)
   let lastLogLen = 0;        // per mostrare come banner i nuovi eventi ricevuti
+  let lastMoveLen = 0;       // per mostrare le frecce dei nuovi spostamenti ricevuti
+  let lastTurnKey = null;    // per suonare l'inizio di ogni nuovo turno una sola volta
   function isMyTurn() { return !onlineMode || (game && game.currentPlayer === myPlayerId && game.winner == null); }
   // Puoi comandare ora? (online: solo nel tuo turno; locale: se il giocatore non è IA)
   function canControl() {
@@ -28,7 +31,7 @@
     if (onlineMode) return game.currentPlayer === myPlayerId;
     return !game.player(game.currentPlayer).isAI;
   }
-  function syncNet() { if (onlineMode && !applyingRemote && window.IGNet) { IGNet.pushState(game.toState()); lastLogLen = game.log.length; } }
+  function syncNet() { if (onlineMode && !applyingRemote && window.IGNet) { IGNet.pushState(game.toState()); lastLogLen = game.log.length; lastMoveLen = (game.moveLog || []).length; } }
 
   // ---------------------------------------------------------------- helpers DOM
   const $ = (id) => document.getElementById(id);
@@ -47,6 +50,40 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  // Rende `elem` trascinabile afferrando `handle`. Se non c'è trascinamento
+  // (solo un clic), esegue `onClick`. Salva la posizione in localStorage(`key`).
+  function makeDraggable(elem, handle, onClick, key) {
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, dragging = false;
+    handle.style.touchAction = "none";
+    const down = (e) => {
+      dragging = true; moved = false;
+      const p = e.touches ? e.touches[0] : e;
+      sx = p.clientX; sy = p.clientY;
+      const rect = elem.getBoundingClientRect();
+      ox = rect.left; oy = rect.top;
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", up);
+    };
+    const move = (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      if (!moved) return;
+      let nl = Math.max(4, Math.min(window.innerWidth - 60, ox + dx));
+      let nt = Math.max(4, Math.min(window.innerHeight - 30, oy + dy));
+      elem.style.left = nl + "px"; elem.style.top = nt + "px";
+      elem.style.right = "auto"; elem.style.bottom = "auto";
+    };
+    const up = () => {
+      dragging = false;
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      if (!moved) { if (onClick) onClick(); }
+      else if (key) { const r = elem.getBoundingClientRect(); try { localStorage.setItem(key, JSON.stringify({ left: r.left, top: r.top })); } catch (e) {} }
+    };
+    handle.addEventListener("pointerdown", down);
+  }
+
   function toast(msg) {
     let t = $("toast");
     if (!t) { t = htmlEl("div"); t.id = "toast"; t.style.cssText = "position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#22304e;border:1px solid #3f5b94;padding:9px 16px;border-radius:8px;z-index:99;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.5)"; document.body.appendChild(t); }
@@ -89,10 +126,11 @@
     const opts = { players };
     if (seedVal) opts.seed = parseInt(seedVal, 10);
     game = new IG.Game(opts);
-    onlineMode = false; myPlayerId = -1; startDiceShown = false;
+    onlineMode = false; myPlayerId = -1; startDiceShown = false; lastTurnKey = null;
     $("setup").classList.add("hidden");
     $("game").classList.remove("hidden");
     sel = { fleetId: null, cellKey: null };
+    Snd.resume(); Snd.startMusic();
     render();
     centerBoard();
     startDiceShown = true;
@@ -132,6 +170,7 @@
     N.on("started", (m) => applyRemoteState(m.state));
     N.on("state", (m) => applyRemoteState(m.state));
     N.on("chat", (m) => addChatMessage(m.name, m.seat, m.text, false));
+    N.on("combat", (m) => onNetCombat(m));
     N.connect(server, code, name);
   }
 
@@ -146,11 +185,17 @@
       '<div id="chatInputRow"><input id="chatInput" type="text" placeholder="Scrivi un messaggio…" maxlength="300" /><button id="chatSend" class="primary small">Invia</button></div>' +
       "</div>";
     document.body.appendChild(w);
-    $("chatHeader").onclick = () => {
+    // Posizione salvata (il widget è trascinabile dall'intestazione)
+    try {
+      const pos = JSON.parse(localStorage.getItem("ig_chatpos") || "null");
+      if (pos && typeof pos.left === "number") { w.style.left = pos.left + "px"; w.style.top = pos.top + "px"; w.style.right = "auto"; w.style.bottom = "auto"; }
+    } catch (e) {}
+    const toggleChat = () => {
       w.classList.toggle("collapsed");
       $("chatToggle").textContent = w.classList.contains("collapsed") ? "▸" : "▾";
       if (!w.classList.contains("collapsed")) { $("chatBadge").textContent = ""; chatUnread = 0; $("chatInput").focus(); }
     };
+    makeDraggable(w, $("chatHeader"), toggleChat, "ig_chatpos");
     $("chatSend").onclick = sendChatMessage;
     $("chatInput").onkeydown = (e) => { if (e.key === "Enter") sendChatMessage(); };
   }
@@ -159,6 +204,7 @@
     const inp = $("chatInput"); if (!inp) return;
     const text = inp.value.trim(); if (!text) return;
     window.IGNet.sendChat(text);
+    Snd.chatSend();
     addChatMessage(window.IGNet.name, window.IGNet.seat, text, true);
     inp.value = "";
   }
@@ -170,6 +216,7 @@
     msg.innerHTML = '<span class="cm-name" style="color:' + color + '">' + esc(name || "?") + "</span> " + esc(text);
     box.appendChild(msg);
     box.scrollTop = box.scrollHeight;
+    if (!mine) Snd.chatReceive();
     const w = $("chatWidget");
     if (!mine && w && w.classList.contains("collapsed")) { chatUnread++; $("chatBadge").textContent = chatUnread; }
   }
@@ -215,14 +262,40 @@
     sel = { fleetId: null, cellKey: null };
     const newLines = game.log.slice(lastLogLen);
     lastLogLen = game.log.length;
+    // Spostamenti nuovi (esclusi i miei, già visti localmente) → frecce sul tabellone
+    const allMoves = game.moveLog || [];
+    const newMoves = allMoves.slice(lastMoveLen).filter((m) => m.owner !== myPlayerId).slice(-6);
+    lastMoveLen = allMoves.length;
+    Snd.startMusic();
     render(); centerBoard();
     applyingRemote = false;
     // Dadi d'inizio (una sola volta, alla prima ricezione dello stato)
     if (!startDiceShown) { startDiceShown = true; showStartDice(() => {}); }
+    showRemoteMoves(newMoves);
     showRemoteEvents(newLines);
+    maybeTurnSound();
     if (game.winner != null) showWin();
     else if (!isMyTurn()) toast("Turno di " + game.player(game.currentPlayer).name);
     else toast("È il tuo turno!");
+  }
+  // Riproduce sul tabellone le frecce degli spostamenti altrui (online)
+  function showRemoteMoves(moves) {
+    if (!moves || !moves.length) return;
+    let i = 0;
+    (function next() {
+      if (i >= moves.length) return;
+      const m = moves[i++];
+      const pl = game.player(m.owner) || { color: "#fff", name: "?" };
+      showMoveArrow(m.fromQ, m.fromR, m.toQ, m.toR, pl.color);
+      bottomInfo('<b style="color:' + pl.color + '">' + esc(pl.name) + "</b> muove → (" + m.toQ + "," + m.toR + ")", pl.color);
+      setTimeout(next, 650);
+    })();
+  }
+  // Suona l'inizio di un turno una sola volta (quando cambia il turno/giocatore)
+  function maybeTurnSound() {
+    if (!game || game.winner != null) return;
+    const key = game.turnNumber + ":" + game.currentPlayer;
+    if (key !== lastTurnKey) { lastTurnKey = key; Snd.turnStart(); }
   }
   function showRemoteEvents(lines) {
     const events = [];
@@ -303,9 +376,24 @@
     return '<svg width="22" height="22" viewBox="0 0 22 22"><g transform="translate(11 11)"><path d="' + shipHullPath(type) + '" fill="#dfe8f7" stroke="#7c8bb3" stroke-width="0.7"/></g></svg>';
   }
 
+  const COLOR_NAMES = CFG.COLOR_NAMES || ["Rosso", "Blu", "Verde", "Giallo"];
   function renderLog() {
     const box = $("logBody"); box.innerHTML = "";
-    for (const line of game.log.slice(-120)) box.appendChild(htmlEl("div", null, line));
+    for (const line of game.log.slice(-140)) {
+      // Divisori di turno
+      if (/^—\s*Inizia il turno/.test(line)) { box.appendChild(htmlEl("div", "log-turn", line.replace(/—/g, "").trim())); continue; }
+      // Righe di dettaglio (indentate o con simboli di round)
+      const sub = /^\s{2,}|^\s*[▶◀]/.test(line);
+      // A quale fazione si riferisce la riga? (prima occorrenza di un nome-colore)
+      let idx = -1, pos = Infinity;
+      COLOR_NAMES.forEach((cn, i) => { const p = line.indexOf(cn); if (p >= 0 && p < pos) { pos = p; idx = i; } });
+      const div = htmlEl("div", "log-entry" + (sub ? " sub" : "") + (idx < 0 ? " neutral" : ""));
+      if (idx >= 0) div.style.borderLeftColor = CFG.COLORS[idx];
+      let html = esc(line);
+      COLOR_NAMES.forEach((cn, i) => { html = html.replace(new RegExp("\\b" + cn + "\\b", "g"), '<b class="lg-fac" style="color:' + CFG.COLORS[i] + '">' + cn + "</b>"); });
+      div.innerHTML = html;
+      box.appendChild(div);
+    }
     box.scrollTop = box.scrollHeight;
   }
 
@@ -373,7 +461,7 @@
       '<radialGradient id="g-asteroids" cx="50%" cy="45%" r="75%"><stop offset="0%" stop-color="#33291a"/><stop offset="100%" stop-color="#16110a"/></radialGradient>' +
       '<radialGradient id="g-market" cx="50%" cy="45%" r="75%"><stop offset="0%" stop-color="#11324c"/><stop offset="100%" stop-color="#091826"/></radialGradient>' +
       '<radialGradient id="g-casino" cx="50%" cy="45%" r="75%"><stop offset="0%" stop-color="#341a42"/><stop offset="100%" stop-color="#190c22"/></radialGradient>' +
-      '<radialGradient id="g-unexplored" cx="50%" cy="38%" r="80%"><stop offset="0%" stop-color="#1a2742"/><stop offset="100%" stop-color="#0c1424"/></radialGradient>' +
+      '<radialGradient id="g-unexplored" cx="50%" cy="38%" r="80%"><stop offset="0%" stop-color="#3a3f4d"/><stop offset="55%" stop-color="#22252e"/><stop offset="100%" stop-color="#0a0b10"/></radialGradient>' +
       '<linearGradient id="g-side" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3a5894"/><stop offset="35%" stop-color="#1c2c4e"/><stop offset="100%" stop-color="#04060e"/></linearGradient>' +
       pg + shipGrads() +
       '<filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
@@ -505,6 +593,7 @@
 
   function renderBoard() {
     const svg = $("board");
+    hidePlanetCard();
     const w = Hex.toPixel(CFG.COLS - 1, 0, HEX_SIZE).x + 2 * MARGIN;
     const h = Hex.toPixel(0, CFG.ROWS - 1, HEX_SIZE).y + 2 * MARGIN + HEX_SIZE;
     // La plancia si adatta interamente alla finestra (si vede tutto il tabellone)
@@ -524,6 +613,7 @@
         let cls = "hex";
         if (reach.has(key)) cls += " hex-reachable";
         if (sel.cellKey === key) cls += " hex-selected";
+        if (!cell.explored) cls += " hex-unexplored";
         const fill = cell.explored ? (HEX_FILL[cell.type] || "url(#g-space)") : "url(#g-unexplored)";
         // Pareti laterali (spessore 3D): le 3 facce inferiori della tessera
         const v = hexVerts(c.x, c.y, S);
@@ -534,6 +624,11 @@
         // Faccia superiore (cliccabile)
         const poly = svgEl("polygon", { points: hexPoints(c.x, c.y, S), class: cls, fill: fill });
         poly.addEventListener("click", () => onCellClick(q, r));
+        if (cell.type === "planet" && cell.explored) {
+          poly.addEventListener("mouseenter", (e) => showPlanetCard(q, r, e));
+          poly.addEventListener("mousemove", movePlanetCard);
+          poly.addEventListener("mouseleave", hidePlanetCard);
+        }
         svg.appendChild(poly);
         // Bordo luminoso superiore (luce dall'alto)
         svg.appendChild(svgEl("polyline", { points: v[3].x.toFixed(1) + "," + v[3].y.toFixed(1) + " " + v[4].x.toFixed(1) + "," + v[4].y.toFixed(1) + " " + v[5].x.toFixed(1) + "," + v[5].y.toFixed(1) + " " + v[0].x.toFixed(1) + "," + v[0].y.toFixed(1), class: "hex-rim" }));
@@ -603,6 +698,51 @@
       }
     }
   }
+
+  // -------- Plancia del pianeta al passaggio del mouse (edifici, difese, statistiche)
+  function showPlanetCard(q, r, e) {
+    const cell = game.cell(q, r);
+    if (!cell || cell.type !== "planet" || !cell.explored) return;
+    const d = cell.planet.data;
+    let card = $("planetCard");
+    if (!card) { card = htmlEl("div"); card.id = "planetCard"; document.body.appendChild(card); }
+    const owner = cell.owner != null ? game.player(cell.owner) : null;
+    const b = cell.buildings;
+    const bList = [["🚀 Fab. Navale", b.fabbricaNavale], ["🏭 Fab. Carri", b.fabbricaCarri], ["🏛 Tesoreria", b.tesoreria], ["🛰 Cannone", b.cannone], ["🗼 Torretta", b.torretta]].filter((x) => x[1] > 0);
+    const totB = Object.values(b).reduce((a, c) => a + c, 0);
+    let html =
+      '<div class="pc-h" style="--pc:' + (PLANET_COLORS[d.tipo] || "#8ab") + '"><span class="pc-emoji">' + (PLANET_EMOJI[d.tipo] || "🪐") + "</span>" +
+      '<div><div class="pc-name">' + esc(d.nome) + '</div><div class="pc-type">Pianeta ' + d.tipo + "</div></div></div>" +
+      (owner
+        ? '<div class="pc-owner"><span class="dot" style="background:' + owner.color + '"></span>' + esc(owner.name) + "</div>"
+        : '<div class="pc-owner free">Libero — colonizzabile</div>') +
+      '<div class="pc-stats">' +
+      "<span>⚙️ Prod ×" + d.produttivita + "</span><span>💰 Eco ×" + d.economia + "</span>" +
+      "<span>⛽×" + d.moltMaterie.carburante + "</span><span>🔩×" + d.moltMaterie.metallo + "</span><span>🪨×" + d.moltMaterie.pietra + "</span>" +
+      "<span>💵 " + (CFG.SOLDI_BASE_PIANETA * d.economia).toLocaleString() + "/t</span></div>";
+    if (owner) {
+      html += '<div class="pc-sec"><div class="pc-sec-t">🏗 Edifici (' + totB + "/9)</div>" +
+        (bList.length ? bList.map((x) => '<span class="pc-tag">' + x[0] + " ×" + x[1] + "</span>").join("") : '<span class="pc-none">nessuno</span>') + "</div>";
+      html += '<div class="pc-sec"><div class="pc-sec-t">🛡 Difese</div>' +
+        '<span class="pc-tag">🪖 Guarnigione ' + cell.garrison + "</span>" +
+        (b.cannone ? '<span class="pc-tag">🛰 Cannone ×' + b.cannone + "</span>" : "") +
+        (b.torretta ? '<span class="pc-tag">🗼 Torretta ×' + b.torretta + "</span>" : "") +
+        (!cell.garrison && !b.cannone && !b.torretta ? '<span class="pc-none">indifeso</span>' : "") + "</div>";
+    }
+    card.innerHTML = html;
+    card.classList.add("show");
+    movePlanetCard(e);
+  }
+  function movePlanetCard(e) {
+    const card = $("planetCard");
+    if (!card || !card.classList.contains("show") || !e) return;
+    const pad = 16, w = card.offsetWidth || 240, h = card.offsetHeight || 200;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+    if (y + h > window.innerHeight - 8) y = Math.max(8, window.innerHeight - h - 8);
+    card.style.left = x + "px"; card.style.top = y + "px";
+  }
+  function hidePlanetCard() { const card = $("planetCard"); if (card) card.classList.remove("show"); }
 
   // ---------------------------------------------------------------- INTERAZIONE
   function onCellClick(q, r) {
@@ -950,7 +1090,7 @@
     body.appendChild(grid);
     body.appendChild(htmlEl("p", "muted center", "Lancerai tu i tuoi dadi, uno per uno."));
     modal("⚔ Scontro spaziale (" + ev.q + "," + ev.r + ")", body, [
-      { label: "⚔ Combatti!", primary: true, onClick: () => startInteractiveCombat("fleet", ev) },
+      { label: "⚔ Combatti!", primary: true, onClick: () => launchAttack("fleet", ev) },
       { label: "Annulla", onClick: () => { closeModal(); render(); } },
     ]);
   }
@@ -972,7 +1112,7 @@
     landRow.appendChild(inp);
     body.appendChild(landRow);
     modal("⚔ Attacco a pianeta (" + ev.q + "," + ev.r + ")", body, [
-      { label: "⚔ Combatti!", primary: true, onClick: () => { const land = Math.max(0, Math.min(att.carri, parseInt(inp.value || "0", 10))); startInteractiveCombat("planet", Object.assign({}, ev, { land: land })); } },
+      { label: "⚔ Combatti!", primary: true, onClick: () => { const land = Math.max(0, Math.min(att.carri, parseInt(inp.value || "0", 10))); launchAttack("planet", Object.assign({}, ev, { land: land })); } },
       { label: "Annulla", onClick: () => { closeModal(); render(); } },
     ]);
   }
@@ -999,7 +1139,58 @@
         mySide: opts.mySide || "A", onDone: opts.onDone || null,
         session: game.makeCombatSession(setup.uA, setup.uB, false) };
     }
+    combatCtx.net = !!opts.net;
+    combatCtx.cid = opts.cid || null;
+    combatCtx.enemyQueue = [];      // tiri di dado dell'avversario ricevuti dalla rete
+    combatCtx.sentRoundKey = null;  // per inviare i miei dadi una sola volta a round
     combatCtx.session.startRound();
+    renderCombat();
+  }
+
+  // L'attaccante avvia il combattimento. Online, se il difensore è un altro
+  // giocatore umano, i dadi di DIFESA li lancia lui: si usa il combattimento in rete.
+  function launchAttack(kind, ev) {
+    let defenderSeat = null;
+    if (kind === "fleet") { const def = game.fleetById(ev.defender); defenderSeat = def ? def.owner : null; }
+    else { const cell = game.cell(ev.q, ev.r); defenderSeat = cell ? cell.owner : null; }
+    if (onlineMode && defenderSeat != null && defenderSeat !== myPlayerId) {
+      const cid = "c" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+      window.IGNet.sendCombat({ sub: "start", cid: cid, kind: kind, attacker: ev.attacker, defender: ev.defender != null ? ev.defender : null, q: ev.q, r: ev.r, land: ev.land || 0, attackerSeat: myPlayerId, defenderSeat: defenderSeat });
+      startInteractiveCombat(kind, ev, { mySide: "A", net: true, cid: cid });
+    } else {
+      startInteractiveCombat(kind, ev, { mySide: "A" });
+    }
+  }
+
+  // Ricezione dei messaggi di combattimento online
+  function onNetCombat(m) {
+    if (m.sub === "start") {
+      if (m.defenderSeat !== myPlayerId) return; // non tocca a me difendere
+      if (combatCtx) return; // già in un combattimento
+      toast("⚠ Sei sotto attacco — lancia i dadi di difesa!");
+      Snd.turnStart();
+      startInteractiveCombat(m.kind, { attacker: m.attacker, defender: m.defender, q: m.q, r: m.r, land: m.land }, { mySide: "B", net: true, cid: m.cid });
+    } else if (m.sub === "roll") {
+      if (combatCtx && combatCtx.net && combatCtx.cid === m.cid) { combatCtx.enemyQueue.push(m.dice || []); tryApplyEnemyRoll(); }
+    }
+  }
+  // Invia i miei dadi del round corrente (una sola volta per round)
+  function sendMyRoll(list) {
+    const ctx = combatCtx; if (!ctx || !ctx.net) return;
+    const key = ctx.phase + ":" + ctx.session.roundIndex;
+    if (ctx.sentRoundKey === key) return;
+    ctx.sentRoundKey = key;
+    window.IGNet.sendCombat({ sub: "roll", cid: ctx.cid, dice: list.map((d) => d.die) });
+  }
+  // Applica i dadi dell'avversario in coda al round corrente
+  function tryApplyEnemyRoll() {
+    const ctx = combatCtx; if (!ctx || !ctx.net || !ctx.enemyQueue.length || !ctx.session.round) return;
+    const r = ctx.session.round;
+    const iAmAggressor = (r.aggressorIsA === (ctx.mySide === "A"));
+    const enemy = iAmAggressor ? r.def : r.att;
+    if (enemy.every((d) => d.die != null)) return; // già riempito
+    const dice = ctx.enemyQueue.shift();
+    for (let i = 0; i < enemy.length; i++) enemy[i].die = dice[i];
     renderCombat();
   }
 
@@ -1034,6 +1225,24 @@
     modalWide(title, body);
     const acts = $("modalActions"); acts.innerHTML = "";
     const yoursDone = yours.every((d) => d.die != null), enemyDone = enemy.every((d) => d.die != null);
+
+    // --- Combattimento in rete: ognuno lancia SOLO i propri dadi ---
+    if (ctx.net) {
+      if (!yoursDone) {
+        acts.appendChild(htmlEl("div", "ca-hint", "👆 Clicca i tuoi dadi (o lanciali tutti)"));
+        const all = htmlEl("button", "primary", "Lancia i miei dadi 🎲"); all.onclick = () => { s.rollAll(yours); Snd.dice(); renderCombat(); }; acts.appendChild(all);
+      } else if (!enemyDone) {
+        sendMyRoll(yours);                 // invia i miei dadi all'avversario
+        acts.appendChild(htmlEl("div", "ca-hint", "⏳ In attesa dei dadi dell'avversario…"));
+        tryApplyEnemyRoll();               // se sono già arrivati, applicali
+      } else {
+        acts.appendChild(htmlEl("div", "ca-hint", "Risoluzione del round…"));
+        setTimeout(() => { if (combatCtx === ctx && !ctx._resolving) { ctx._resolving = true; const res = s.resolve(); ctx._resolving = false; onRoundResolved(res); } }, 550);
+      }
+      return;
+    }
+
+    // --- Combattimento locale (hot-seat / difesa contro l'IA): tiri tu tutti i dadi ---
     if (!yoursDone) {
       acts.appendChild(htmlEl("div", "ca-hint", "👆 Clicca i tuoi dadi per lanciarli"));
       const all = htmlEl("button", null, "Lancia tutti"); all.onclick = () => { s.rollAll(yours); renderCombat(); }; acts.appendChild(all);
@@ -1131,6 +1340,7 @@
     const ev = combatCtx ? combatCtx.ev : null;
     const onDone = combatCtx ? combatCtx.onDone : null;
     const mySide = combatCtx ? combatCtx.mySide : "A";
+    const net = combatCtx ? combatCtx.net : false;
     const body = htmlEl("div");
     const ban = htmlEl("div", "outcome-banner " + out.type); ban.textContent = out.text; body.appendChild(ban);
     body.appendChild(htmlEl("p", "muted center", "Premi OK per continuare."));
@@ -1143,7 +1353,7 @@
       render();
       if (game.winner != null) { showWin(); return; }
       if (onDone) { onDone(); return; }  // riprende il turno dell'IA dopo la difesa
-      syncNet();                          // online: sincronizza l'esito
+      if (!(net && mySide === "B")) syncNet(); // online: l'attaccante sincronizza l'esito (il difensore no)
     };
     acts.appendChild(ok);
     combatCtx = null;
@@ -1457,6 +1667,7 @@
     render();
     if (game.winner != null) { showWin(); return; }
     const p = game.player(game.currentPlayer);
+    if (!onlineMode) maybeTurnSound();
     maybeShowRiscossione();
     if (p.isAI) {
       aiOverlay(true, aiName(p), p.color);
@@ -1530,7 +1741,9 @@
 
   function advancePhase() {
     if (game.winner || !canControl()) return;
+    const prevPlayer = game.currentPlayer, prevTurn = game.turnNumber;
     game.advancePhase();
+    if (game.currentPlayer !== prevPlayer || game.turnNumber !== prevTurn) Snd.passTurn(); // suono di passaggio turno
     sel = { fleetId: null, cellKey: null };
     syncNet(); // invia lo stato (incluso l'eventuale passaggio di turno) agli altri
     checkTurn();
@@ -1560,5 +1773,15 @@
     $("confirmToggle").addEventListener("click", toggleConfirmEvents);
     updateConfirmBtn();
     initOnlineUI();
+    // Audio: pulsante mute + suono ai clic + sblocco al primo gesto
+    const mb = $("muteToggle");
+    if (mb) { updateMuteBtn(); mb.addEventListener("click", () => { Snd.toggle(); updateMuteBtn(); }); }
+    document.addEventListener("pointerdown", () => Snd.resume(), true);
+    document.addEventListener("click", (e) => { if (e.target && e.target.closest && e.target.closest("button")) Snd.click(); }, true);
   });
+  function updateMuteBtn() {
+    const btn = $("muteToggle"); if (!btn) return;
+    btn.textContent = Snd.muted ? "🔇 Audio" : "🔊 Audio";
+    btn.classList.toggle("on", !Snd.muted);
+  }
 })();

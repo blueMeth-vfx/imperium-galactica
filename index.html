@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imperium Galactica — Gioco da Tavolo</title>
-  <link rel="stylesheet" href="ui/styles.css?v=32" />
+  <link rel="stylesheet" href="ui/styles.css?v=33" />
 </head>
 <body>
   <!-- ===================== Schermata di setup ===================== -->
@@ -72,6 +72,7 @@
       <div id="turnInfo"></div>
       <div id="phaseInfo"></div>
       <div class="top-actions">
+        <button id="muteToggle" title="Attiva/disattiva audio e musica">🔊 Audio</button>
         <button id="confirmToggle" title="Richiedi conferma di lettura per ogni evento">🔕 Eventi: auto</button>
         <button id="advanceBtn" class="primary">Avanza fase ▸</button>
         <button id="helpBtn">Regole</button>
@@ -107,16 +108,17 @@
   </div>
 
   <!-- Engine (logica pura). Il ?v= forza il refresh dopo gli aggiornamenti. -->
-  <script src="data/gamedata.js?v=32"></script>
-  <script src="engine/config.js?v=32"></script>
-  <script src="engine/hex.js?v=32"></script>
-  <script src="engine/game.js?v=32"></script>
-  <script src="engine/combat.js?v=32"></script>
-  <script src="engine/casino.js?v=32"></script>
-  <script src="engine/market.js?v=32"></script>
-  <script src="engine/ai.js?v=32"></script>
+  <script src="data/gamedata.js?v=33"></script>
+  <script src="engine/config.js?v=33"></script>
+  <script src="engine/hex.js?v=33"></script>
+  <script src="engine/game.js?v=33"></script>
+  <script src="engine/combat.js?v=33"></script>
+  <script src="engine/casino.js?v=33"></script>
+  <script src="engine/market.js?v=33"></script>
+  <script src="engine/ai.js?v=33"></script>
   <!-- Interfaccia -->
-  <script src="ui/net.js?v=32"></script>
-  <script src="ui/ui.js?v=32"></script>
+  <script src="ui/sound.js?v=33"></script>
+  <script src="ui/net.js?v=33"></script>
+  <script src="ui/ui.js?v=33"></script>
 </body>
 </html>

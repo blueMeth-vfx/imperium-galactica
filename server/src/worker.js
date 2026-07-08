@@ -107,6 +107,13 @@ export class Room {
       this.broadcast({ t: "chat", text: text, name: conn.name, seat: conn.seat }, conn.id);
       return;
     }
+
+    // Combattimento interattivo online: relay dei messaggi (start / tiri di dado)
+    // agli altri connessi. Così il difensore lancia i propri dadi di difesa.
+    if (m.t === "combat") {
+      this.broadcast(Object.assign({}, m, { fromSeat: conn.seat }), conn.id);
+      return;
+    }
   }
 }
 

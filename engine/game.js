@@ -549,7 +549,7 @@
     "players", "board", "fleets", "fleetSeq", "tileDeck", "planetPool",
     "asteroidDeck", "asteroidDiscard", "marketDeck", "turnOrder", "startPlayer",
     "direction", "turnNumber", "orderIdx", "phaseIdx", "currentPlayer", "winner",
-    "log", "lastRiscossione", "casinoSessions", "orderRolls",
+    "log", "lastRiscossione", "casinoSessions", "orderRolls", "moveLog",
   ];
   Game.prototype.toState = function () {
     const o = {};

@@ -32,6 +32,7 @@
     pushState(state) { this.send({ t: "state", state: state }); },
     sendEvent(text) { this.send({ t: "event", text: text }); },
     sendChat(text) { this.send({ t: "chat", text: text }); },
+    sendCombat(obj) { this.send(Object.assign({ t: "combat" }, obj)); },
     close() { try { this.ws && this.ws.close(); } catch (e) {} },
   };
   window.IGNet = IGNet;
