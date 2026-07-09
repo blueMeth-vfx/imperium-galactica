@@ -92,6 +92,33 @@
       this._tone(90, 0.3, "sine", 0.14, 55); // rombo di spinta
     },
 
+    // Zap laser (colpo in battaglia)
+    laser() {
+      if (this.sfxMuted) return; this.resume();
+      this._tone(1200 + Math.random() * 300, 0.13, "sawtooth", 0.10, 180);
+      this._tone(900, 0.09, "square", 0.05, 220, 0.02);
+    },
+    // Esplosione (unità distrutta)
+    boom() {
+      if (this.sfxMuted) return; this.resume();
+      if (!this.ctx) return;
+      const t0 = this.ctx.currentTime, dur = 0.5;
+      const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.6);
+      const src = this.ctx.createBufferSource(); src.buffer = buf;
+      const lp = this.ctx.createBiquadFilter(); lp.type = "lowpass";
+      lp.frequency.setValueAtTime(2200, t0);
+      lp.frequency.exponentialRampToValueAtTime(120, t0 + dur);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      src.connect(lp); lp.connect(g); g.connect(this.master);
+      src.start(t0); src.stop(t0 + dur);
+      this._tone(70, 0.4, "sine", 0.2, 40); // onda d'urto bassa
+    },
+
     // ---- Musica di sottofondo (pad ambient a bassa intensità) ----
     _pad(freqs, dur) {
       if (!this.ctx || !this.musicGain) return;

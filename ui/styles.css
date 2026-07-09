@@ -674,3 +674,25 @@ button.primary:hover::after { left: 130%; }
 
 /* Pulsanti audio separati */
 #musicToggle.on, #sfxToggle.on { border-color: var(--accent); color: #cfe0ff; }
+
+/* ============================================================
+   v38 — Plance di battaglia (spazio e terra)
+   ============================================================ */
+.battlefield { display: block; width: 100%; border: 1px solid #223055; border-radius: 10px;
+  margin: 8px 0 10px; box-shadow: inset 0 0 40px rgba(0,0,0,.5), 0 4px 18px rgba(0,0,0,.35); }
+.battlefield.bf-ground { border-color: #4a3a26; }
+.bf-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-weight: 700; font-size: 13.5px; }
+.bf-head .bf-side { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bf-head .bf-n { color: var(--muted); font-weight: 700; font-size: 12px; }
+.bf-round { color: var(--gold); font-size: 12px; letter-spacing: .5px; white-space: nowrap; }
+/* Laser: lampo che appare e svanisce */
+.bf-laser { animation: laserflash .3s ease-out forwards; filter: drop-shadow(0 0 4px currentColor); pointer-events: none; }
+@keyframes laserflash { 0% { opacity: 0; } 12% { opacity: 1; } 70% { opacity: .9; } 100% { opacity: 0; } }
+/* Unità colpita: esplode e scompare */
+.bf-unit { transition: opacity .3s; }
+.bf-unit.bf-dying { animation: bfdie .55s ease-in forwards; transform-box: fill-box; transform-origin: center; }
+@keyframes bfdie { 0% { opacity: 1; } 30% { opacity: 1; transform: scale(1.06) rotate(4deg); }
+  100% { opacity: 0; transform: scale(.35) rotate(24deg); } }
+.bf-exp, .bf-shield { pointer-events: none; }

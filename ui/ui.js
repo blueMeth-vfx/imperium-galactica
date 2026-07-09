@@ -6,7 +6,7 @@
   const IG = window.IG;
   const CFG = IG.CONFIG;
   const Hex = IG.Hex;
-  const Snd = window.IGSound || { resume() {}, click() {}, turnStart() {}, passTurn() {}, chatSend() {}, chatReceive() {}, dice() {}, move() {}, startMusic() {}, stopMusic() {}, toggleSfx() { return true; }, toggleMusic() { return true; }, sfxMuted: false, musicMuted: false };
+  const Snd = window.IGSound || { resume() {}, click() {}, turnStart() {}, passTurn() {}, chatSend() {}, chatReceive() {}, dice() {}, move() {}, laser() {}, boom() {}, startMusic() {}, stopMusic() {}, toggleSfx() { return true; }, toggleMusic() { return true; }, sfxMuted: false, musicMuted: false };
   const SVGNS = "http://www.w3.org/2000/svg";
   const HEX_SIZE = 40;
   const MARGIN = HEX_SIZE + 52; // spazio extra per gli inventari agli angoli (sopra/sotto)
@@ -1481,6 +1481,8 @@
     combatCtx.cid = opts.cid || null;
     combatCtx.enemyQueue = [];      // tiri di dado dell'avversario ricevuti dalla rete
     combatCtx.sentRoundKey = null;  // per inviare i miei dadi una sola volta a round
+    combatCtx.bfOwners = { A: combatCtx.att.owner, B: combatCtx.def ? combatCtx.def.owner : combatCtx.cell.owner };
+    initBattlefield(combatCtx);
     combatCtx.session.startRound();
     renderCombat();
   }
@@ -1532,6 +1534,188 @@
     renderCombat();
   }
 
+  // ===================== CAMPO DI BATTAGLIA VISIVO =====================
+  // Le unità dei due lati schierate una di fronte all'altra; dopo la risoluzione
+  // dei dadi si vedono i colpi (laser/proiettili), le esplosioni e gli scudi.
+  function initBattlefield(ctx) {
+    ctx.session.A.forEach((u, i) => { u._slot = i; });
+    ctx.session.B.forEach((u, i) => { u._slot = i; });
+    ctx.bfPos = {}; // "A-3" -> {x,y}, riempito dal rendering
+  }
+
+  const BF_W = 560, BF_H = 210;
+  function renderBattlefield(ctx) {
+    const s = ctx.session, ground = !!s.ground;
+    const svg = svgEl("svg", { viewBox: "0 0 " + BF_W + " " + BF_H, class: "battlefield " + (ground ? "bf-ground" : "bf-space") });
+    if (ground) {
+      // teatro terrestre: cielo all'orizzonte + suolo con crateri
+      svg.innerHTML = '<defs>' +
+        '<linearGradient id="bf-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#141c38"/><stop offset="100%" stop-color="#513c2a"/></linearGradient>' +
+        '<linearGradient id="bf-terra" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5c4832"/><stop offset="100%" stop-color="#20160c"/></linearGradient>' +
+        '</defs>' +
+        '<rect x="0" y="0" width="' + BF_W + '" height="72" fill="url(#bf-sky)"/>' +
+        '<rect x="0" y="72" width="' + BF_W + '" height="' + (BF_H - 72) + '" fill="url(#bf-terra)"/>';
+      for (let i = 0; i < 8; i++) {
+        const cx = 20 + Math.random() * (BF_W - 40), cy = 88 + Math.random() * (BF_H - 108), rx = 6 + Math.random() * 14;
+        svg.appendChild(svgEl("ellipse", { cx: cx.toFixed(0), cy: cy.toFixed(0), rx: rx.toFixed(0), ry: (rx * 0.35).toFixed(0), fill: "#000", opacity: 0.2 }));
+      }
+    } else {
+      // teatro spaziale: campo stellare + nebulose
+      svg.innerHTML = '<rect x="0" y="0" width="' + BF_W + '" height="' + BF_H + '" fill="#060b1a"/>';
+      for (let i = 0; i < 42; i++) {
+        svg.appendChild(svgEl("circle", { cx: (Math.random() * BF_W).toFixed(0), cy: (Math.random() * BF_H).toFixed(0), r: (0.3 + Math.random() * 1.2).toFixed(1), fill: "#cfe0ff", opacity: (0.2 + Math.random() * 0.6).toFixed(2) }));
+      }
+      svg.appendChild(svgEl("ellipse", { cx: 120, cy: 45, rx: 140, ry: 65, fill: "url(#neb-violet)" }));
+      svg.appendChild(svgEl("ellipse", { cx: 450, cy: 168, rx: 125, ry: 58, fill: "url(#neb-cyan)" }));
+    }
+    // linea del fronte
+    svg.appendChild(svgEl("line", { x1: BF_W / 2, y1: 14, x2: BF_W / 2, y2: BF_H - 14, stroke: "#5b6c96", "stroke-width": 1, "stroke-dasharray": "4 6", opacity: 0.35 }));
+    ctx.bfPos = {};
+    drawBFSide(svg, ctx, "A", s.A, ground);
+    drawBFSide(svg, ctx, "B", s.B, ground);
+    return svg;
+  }
+
+  // Schiera le unità di un lato a griglia (A a sinistra, B a destra, muso verso il nemico)
+  function drawBFSide(svg, ctx, side, units, ground) {
+    const n = units.length; if (!n) return;
+    const rows = Math.min(5, Math.max(2, Math.ceil(n / 4)));
+    const cols = Math.ceil(n / rows);
+    const rowH = Math.min(ground ? 30 : 36, 160 / rows);
+    const colW = Math.min(42, 145 / cols);
+    const scale = Math.max(0.55, Math.min(1.1, rowH / 30));
+    const y0 = (ground ? 128 : 105) - ((rows - 1) * rowH) / 2;
+    const color = side === "A" ? ctx.attColor : ctx.defColor;
+    const ownerId = ctx.bfOwners ? ctx.bfOwners[side] : 0;
+    units.forEach((u, i) => {
+      const row = i % rows, col = Math.floor(i / rows);
+      const x = side === "A" ? 235 - col * colW - (row % 2) * 9 : 325 + col * colW + (row % 2) * 9;
+      const y = y0 + row * rowH;
+      ctx.bfPos[side + "-" + u._slot] = { x: x, y: y };
+      const g = svgEl("g", { id: "bf-" + side + "-" + u._slot, class: "bf-unit" });
+      drawBFUnit(g, u, x, y, scale, ownerId, color, side === "A");
+      svg.appendChild(g);
+    });
+  }
+
+  function drawBFUnit(parent, u, x, y, s, ownerId, color, facingRight) {
+    if (u.type === "cannone") return drawBFCannon(parent, x, y, s, color, facingRight);
+    if (u.type === "torretta") return drawBFTurret(parent, x, y, s, color);
+    const type = u.type === "carro" ? "carri" : u.type;
+    parent.appendChild(svgEl("ellipse", { cx: x, cy: y + 11 * s, rx: 10 * s, ry: 2.6 * s, fill: "#000", opacity: 0.35 }));
+    const g = svgEl("g", { transform: "translate(" + x + " " + y + ") scale(" + s + ") rotate(" + (facingRight ? 90 : -90) + ")" });
+    shipParts(g, type, ownerId, color);
+    parent.appendChild(g);
+  }
+  // Cannone interstellare (difesa spaziale): piattaforma con canna verso il nemico
+  function drawBFCannon(parent, x, y, s, color, facingRight) {
+    const dk = shade(color, -0.4);
+    const g = svgEl("g", { transform: "translate(" + x + " " + y + ") scale(" + s + ")" });
+    g.appendChild(svgEl("rect", { x: -4, y: -13, width: 8, height: 6, rx: 1, fill: dk }));
+    g.appendChild(svgEl("rect", { x: -4, y: 7, width: 8, height: 6, rx: 1, fill: dk }));
+    g.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 6, fill: "#1b2440", stroke: color, "stroke-width": 1.4 }));
+    g.appendChild(svgEl("rect", { x: facingRight ? 5 : -15, y: -1.6, width: 10, height: 3.2, rx: 1.4, fill: color }));
+    g.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 2.2, fill: color }));
+    parent.appendChild(g);
+  }
+  // Torretta di terra: torre con cupola e canna
+  function drawBFTurret(parent, x, y, s, color) {
+    const dk = shade(color, -0.45);
+    const g = svgEl("g", { transform: "translate(" + x + " " + y + ") scale(" + s + ")" });
+    g.appendChild(svgEl("ellipse", { cx: 0, cy: 10, rx: 9, ry: 2.6, fill: "#000", opacity: 0.35 }));
+    g.appendChild(svgEl("path", { d: "M-8 10 L-5 -2 L5 -2 L8 10 Z", fill: dk, stroke: "#0a0f1e", "stroke-width": 0.6 }));
+    g.appendChild(svgEl("circle", { cx: 0, cy: -4, r: 4.4, fill: color, stroke: dk, "stroke-width": 1 }));
+    g.appendChild(svgEl("rect", { x: -14, y: -5.4, width: 11, height: 2.6, rx: 1.2, fill: dk }));
+    parent.appendChild(g);
+  }
+
+  // Animazione SMIL avviata manualmente (inserita a runtime, begin="indefinite")
+  function smilAnim(el, attrs) {
+    const a = svgEl("animate", Object.assign({ begin: "indefinite", fill: "freeze" }, attrs));
+    el.appendChild(a);
+    requestAnimationFrame(() => { try { a.beginElement(); } catch (e) {} });
+  }
+  function fireLaser(svg, a, b, color) {
+    [[3.2, color], [1.2, "#ffffff"]].forEach((cfg) => {
+      const ln = svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: cfg[1], "stroke-width": cfg[0], "stroke-linecap": "round", class: "bf-laser" });
+      ln.style.color = cfg[1];
+      svg.appendChild(ln);
+      setTimeout(() => { try { ln.remove(); } catch (e) {} }, 320);
+    });
+  }
+  function explodeAt(svg, p, unitId) {
+    const unit = document.getElementById("bf-" + unitId);
+    if (unit) unit.classList.add("bf-dying");
+    const g = svgEl("g", { class: "bf-exp" });
+    const fire = svgEl("circle", { cx: p.x, cy: p.y, r: 1, fill: "#ff9a3c" });
+    smilAnim(fire, { attributeName: "r", from: "1", to: "12", dur: "0.55s" });
+    smilAnim(fire, { attributeName: "opacity", from: "1", to: "0", dur: "0.55s" });
+    const flash = svgEl("circle", { cx: p.x, cy: p.y, r: 2, fill: "#ffffff" });
+    smilAnim(flash, { attributeName: "r", from: "2", to: "17", dur: "0.4s" });
+    smilAnim(flash, { attributeName: "opacity", from: "1", to: "0", dur: "0.4s" });
+    g.appendChild(fire); g.appendChild(flash);
+    for (let i = 0; i < 6; i++) {
+      const an = Math.random() * Math.PI * 2, d = 10 + Math.random() * 12;
+      const sp = svgEl("line", { x1: p.x, y1: p.y, x2: p.x + Math.cos(an) * d, y2: p.y + Math.sin(an) * d, stroke: "#ffcf7a", "stroke-width": 1.1 });
+      smilAnim(sp, { attributeName: "opacity", from: "0.9", to: "0", dur: "0.5s" });
+      g.appendChild(sp);
+    }
+    svg.appendChild(g);
+    setTimeout(() => { try { g.remove(); } catch (e) {} }, 700);
+  }
+  function shieldAt(svg, p) {
+    const c = svgEl("circle", { cx: p.x, cy: p.y, r: 9, fill: "none", stroke: "#7fd0ff", "stroke-width": 2, class: "bf-shield" });
+    smilAnim(c, { attributeName: "r", from: "9", to: "17", dur: "0.4s" });
+    smilAnim(c, { attributeName: "opacity", from: "0.9", to: "0", dur: "0.4s" });
+    svg.appendChild(c);
+    setTimeout(() => { try { c.remove(); } catch (e) {} }, 500);
+  }
+  function shakeModal() {
+    const box = $("modal").querySelector(".modal-box");
+    if (box) { box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake"); setTimeout(() => box.classList.remove("shake"), 450); }
+  }
+
+  // Risolve il round e mette in scena i colpi: laser dall'aggressore, poi
+  // esplosioni sulle unità distrutte (o scudo se nessun colpo va a segno).
+  function resolveRoundWithFX() {
+    const ctx = combatCtx; if (!ctx) return;
+    const s = ctx.session;
+    const aggSide = s.aggressorIsA ? "A" : "B";
+    const defArr = s.aggressorIsA ? s.B : s.A;
+    const before = defArr.slice();
+    const res = s.resolve();
+    const dead = before.filter((u) => defArr.indexOf(u) === -1);
+    playBattleFX(ctx, aggSide, dead, () => { if (combatCtx === ctx) onRoundResolved(res); });
+  }
+  function playBattleFX(ctx, aggSide, dead, done) {
+    const svg = document.querySelector("#modalBody .battlefield");
+    if (!svg) { done(); return; }
+    const defSide = aggSide === "A" ? "B" : "A";
+    const shooters = (aggSide === "A" ? ctx.session.A : ctx.session.B).slice(0, 3);
+    const attColor = aggSide === "A" ? ctx.attColor : ctx.defColor;
+    const defUnits = aggSide === "A" ? ctx.session.B : ctx.session.A;
+    // bersagli: le unità distrutte; se nessuna, un difensore a caso (colpo parato)
+    const targets = dead.length ? dead : (defUnits.length ? [defUnits[Math.floor(Math.random() * defUnits.length)]] : []);
+    if (!targets.length || !shooters.length) { done(); return; }
+    let delay = 0;
+    targets.forEach((t, ti) => {
+      const shooter = shooters[ti % shooters.length];
+      const from = ctx.bfPos[aggSide + "-" + shooter._slot];
+      const to = ctx.bfPos[defSide + "-" + t._slot];
+      if (!from || !to) return;
+      setTimeout(() => {
+        fireLaser(svg, from, to, attColor);
+        Snd.laser();
+        setTimeout(() => {
+          if (dead.length) { explodeAt(svg, to, defSide + "-" + t._slot); Snd.boom(); if (ti === 0) shakeModal(); }
+          else shieldAt(svg, to);
+        }, 170);
+      }, delay);
+      delay += 280;
+    });
+    setTimeout(done, delay + 750);
+  }
+
   function caCol(name, color, comp) {
     const col = htmlEl("div", "battle-col");
     const h = htmlEl("div", "battle-col-h"); h.innerHTML = '<span class="dot" style="background:' + color + '"></span>' + esc(name);
@@ -1542,11 +1726,15 @@
   function renderCombat() {
     const ctx = combatCtx, s = ctx.session;
     const body = htmlEl("div", "combat-arena");
-    const sides = htmlEl("div", "ca-sides");
-    sides.appendChild(caCol(ctx.attName, ctx.attColor, unitsToComp(s.A)));
-    const mid = htmlEl("div", "ca-mid"); mid.innerHTML = '<div class="ca-vs">⚔</div><div class="ca-roundn">Round ' + (s.roundIndex + 1) + (ctx.phase === "ground" ? " · TERRA" : "") + '</div>'; sides.appendChild(mid);
-    sides.appendChild(caCol(ctx.defName, ctx.defColor, unitsToComp(s.B)));
-    body.appendChild(sides);
+    // testata: nomi e conteggi ai lati, round al centro
+    const head = htmlEl("div", "bf-head");
+    head.innerHTML =
+      '<span class="bf-side"><span class="dot" style="background:' + ctx.attColor + '"></span>' + esc(ctx.attName) + ' <span class="bf-n">×' + s.A.length + '</span></span>' +
+      '<span class="bf-round">Round ' + (s.roundIndex + 1) + (ctx.phase === "ground" ? " · 🪖 TERRA" : " · ⚔") + '</span>' +
+      '<span class="bf-side"><span class="bf-n">×' + s.B.length + '</span> ' + esc(ctx.defName) + ' <span class="dot" style="background:' + ctx.defColor + '"></span></span>';
+    body.appendChild(head);
+    // campo di battaglia: le unità schierate una di fronte all'altra
+    body.appendChild(renderBattlefield(ctx));
 
     const r = s.round;
     const iAmAggressor = (r.aggressorIsA === (ctx.mySide === "A")); // sono io ad attaccare in questo round?
@@ -1577,7 +1765,7 @@
         tryApplyEnemyRoll();               // se sono già arrivati, applicali
       } else {
         acts.appendChild(htmlEl("div", "ca-hint", "Risoluzione del round…"));
-        setTimeout(() => { if (combatCtx === ctx && !ctx._resolving) { ctx._resolving = true; const res = s.resolve(); ctx._resolving = false; onRoundResolved(res); } }, 550);
+        setTimeout(() => { if (combatCtx === ctx && !ctx._resolving) { ctx._resolving = true; resolveRoundWithFX(); } }, 550);
       }
       return;
     }
@@ -1589,7 +1777,7 @@
     } else if (!enemyDone) {
       const b = htmlEl("button", "primary", "Lancia dadi avversario 🎲"); b.onclick = () => { s.rollAll(enemy); renderCombat(); }; acts.appendChild(b);
     } else {
-      const b = htmlEl("button", "primary", "Risolvi round ⚔"); b.onclick = () => { const res = s.resolve(); onRoundResolved(res); }; acts.appendChild(b);
+      const b = htmlEl("button", "primary", "Risolvi round ⚔"); b.onclick = () => { b.disabled = true; resolveRoundWithFX(); }; acts.appendChild(b);
     }
   }
 
@@ -1620,11 +1808,8 @@
   }
 
   function onRoundResolved(res) {
-    // colpi a segno → la finestra trema
-    if (res.killed > 0) {
-      const box = $("modal").querySelector(".modal-box");
-      if (box) { box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake"); setTimeout(() => box.classList.remove("shake"), 450); }
-    }
+    if (!combatCtx) return;
+    combatCtx._resolving = false; // lo scuotimento avviene durante gli effetti (playBattleFX)
     if (res.finished) { combatFinished(); }
     else { combatCtx.session.startRound(); renderCombat(); }
   }
@@ -1670,6 +1855,7 @@
       ctx.landN = landN; ctx.gtA = gs.tA; ctx.gtB = gs.tB; ctx.phase = "ground";
       ctx.attName = game.player(ctx.att.owner).name + " (sbarco)";
       ctx.session = game.makeCombatSession(gs.tA, gs.tB, true);
+      initBattlefield(ctx); // nuovo campo di battaglia per la fase di terra
       ctx.session.startRound();
       flashBanner("discovery", "⚔ Lotta di terra", "🪖", "Sbarco di " + landN + " carri", "");
       renderCombat();
