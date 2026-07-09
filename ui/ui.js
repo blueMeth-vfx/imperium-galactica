@@ -1780,33 +1780,52 @@
     el.appendChild(a);
     requestAnimationFrame(() => { try { a.beginElement(); } catch (e) {} });
   }
+  // Muove un elemento (cx/cy) da a a b con easing morbido (moto continuo = fluido)
+  function smilMove(el, a, b, ms) {
+    const dur = (ms / 1000) + "s", ease = { calcMode: "spline", keyTimes: "0;1", keySplines: "0.25 0 0.2 1" };
+    const cx = svgEl("animate", Object.assign({ attributeName: "cx", from: a.x, to: b.x, dur: dur, begin: "indefinite", fill: "freeze" }, ease));
+    const cy = svgEl("animate", Object.assign({ attributeName: "cy", from: a.y, to: b.y, dur: dur, begin: "indefinite", fill: "freeze" }, ease));
+    el.appendChild(cx); el.appendChild(cy);
+    requestAnimationFrame(() => { try { cx.beginElement(); cy.beginElement(); } catch (e) {} });
+  }
+  // Laser: fascio che sfuma + PROIETTILE luminoso che viaggia verso il bersaglio.
+  // Ritorna il tempo di volo (per far coincidere l'esplosione con l'arrivo).
   function fireLaser(svg, a, b, color) {
-    [[3.2, color], [1.2, "#ffffff"]].forEach((cfg) => {
-      const ln = svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: cfg[1], "stroke-width": cfg[0], "stroke-linecap": "round", class: "bf-laser" });
-      ln.style.color = cfg[1];
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const travel = animEnabled ? Math.max(150, Math.min(320, dist * 0.9)) : 50;
+    [[3.4, color, 0.9], [1.4, "#ffffff", 1]].forEach((cfg) => {
+      const ln = svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: cfg[1], "stroke-width": cfg[0], "stroke-linecap": "round", class: "bf-laser", opacity: cfg[2] });
       svg.appendChild(ln);
-      setTimeout(() => { try { ln.remove(); } catch (e) {} }, 320);
+      setTimeout(() => { try { ln.remove(); } catch (e) {} }, travel + 200);
     });
+    const bolt = svgEl("circle", { cx: a.x, cy: a.y, r: 3.4, fill: "#ffffff" });
+    bolt.setAttribute("style", "filter:drop-shadow(0 0 5px " + color + ")");
+    svg.appendChild(bolt);
+    smilMove(bolt, a, b, travel);
+    setTimeout(() => { try { bolt.remove(); } catch (e) {} }, travel + 60);
+    return travel;
   }
   function explodeAt(svg, p, unitId) {
     const unit = document.getElementById("bf-" + unitId);
     if (unit) unit.classList.add("bf-dying");
     const g = svgEl("g", { class: "bf-exp" });
+    const grow = { calcMode: "spline", keyTimes: "0;1", keySplines: "0.12 0.6 0.25 1" }; // accelera poi frena
     const fire = svgEl("circle", { cx: p.x, cy: p.y, r: 1, fill: "#ff9a3c" });
-    smilAnim(fire, { attributeName: "r", from: "1", to: "12", dur: "0.55s" });
-    smilAnim(fire, { attributeName: "opacity", from: "1", to: "0", dur: "0.55s" });
+    smilAnim(fire, Object.assign({ attributeName: "r", from: "1", to: "14", dur: "0.6s" }, grow));
+    smilAnim(fire, { attributeName: "opacity", from: "1", to: "0", dur: "0.6s" });
     const flash = svgEl("circle", { cx: p.x, cy: p.y, r: 2, fill: "#ffffff" });
-    smilAnim(flash, { attributeName: "r", from: "2", to: "17", dur: "0.4s" });
-    smilAnim(flash, { attributeName: "opacity", from: "1", to: "0", dur: "0.4s" });
+    smilAnim(flash, Object.assign({ attributeName: "r", from: "2", to: "18", dur: "0.45s" }, grow));
+    smilAnim(flash, { attributeName: "opacity", from: "1", to: "0", dur: "0.45s" });
     g.appendChild(fire); g.appendChild(flash);
-    for (let i = 0; i < 6; i++) {
-      const an = Math.random() * Math.PI * 2, d = 10 + Math.random() * 12;
-      const sp = svgEl("line", { x1: p.x, y1: p.y, x2: p.x + Math.cos(an) * d, y2: p.y + Math.sin(an) * d, stroke: "#ffcf7a", "stroke-width": 1.1 });
-      smilAnim(sp, { attributeName: "opacity", from: "0.9", to: "0", dur: "0.5s" });
+    for (let i = 0; i < 7; i++) {
+      const an = Math.random() * Math.PI * 2, d = 12 + Math.random() * 14;
+      const sp = svgEl("circle", { cx: p.x, cy: p.y, r: 1.4, fill: "#ffcf7a" });
+      smilMove(sp, p, { x: p.x + Math.cos(an) * d, y: p.y + Math.sin(an) * d }, 520); // schegge che volano
+      smilAnim(sp, { attributeName: "opacity", from: "1", to: "0", dur: "0.55s" });
       g.appendChild(sp);
     }
     svg.appendChild(g);
-    setTimeout(() => { try { g.remove(); } catch (e) {} }, 700);
+    setTimeout(() => { try { g.remove(); } catch (e) {} }, 750);
   }
   function shieldAt(svg, p) {
     const c = svgEl("circle", { cx: p.x, cy: p.y, r: 9, fill: "none", stroke: "#7fd0ff", "stroke-width": 2, class: "bf-shield" });
@@ -1842,8 +1861,9 @@
     // bersagli: le unità distrutte; se nessuna, un difensore a caso (colpo parato)
     const targets = dead.length ? dead : (defUnits.length ? [defUnits[Math.floor(Math.random() * defUnits.length)]] : []);
     if (!targets.length || !shooters.length) { done(); return; }
-    // Ritmo più lento se le animazioni sono attive (battaglie leggibili)
-    const hit = animEnabled ? 420 : 120, step = animEnabled ? 640 : 200, tail = animEnabled ? 1200 : 350;
+    // Ritmo leggibile ma FLUIDO: il colpo esplode quando il proiettile arriva,
+    // così non ci sono pause "vuote" (l'esplosione segue il moto del proiettile).
+    const step = animEnabled ? 560 : 200, tail = animEnabled ? 900 : 300;
     let delay = 0;
     targets.forEach((t, ti) => {
       const shooter = shooters[ti % shooters.length];
@@ -1851,12 +1871,12 @@
       const to = ctx.bfPos[defSide + "-" + t._slot];
       if (!from || !to) return;
       setTimeout(() => {
-        fireLaser(svg, from, to, attColor);
+        const travel = fireLaser(svg, from, to, attColor);
         Snd.laser();
         setTimeout(() => {
           if (dead.length) { explodeAt(svg, to, defSide + "-" + t._slot); Snd.boom(); if (ti === 0) shakeModal(); }
           else shieldAt(svg, to);
-        }, hit);
+        }, travel); // esplode all'arrivo del proiettile
       }, delay);
       delay += step;
     });
@@ -2533,6 +2553,18 @@
     else b.classList.add("hidden");
   }
 
+  // Esci dalla partita e torna al menù iniziale
+  function exitGame() {
+    const body = htmlEl("div");
+    body.innerHTML = onlineMode
+      ? "<p>Vuoi uscire dalla partita online? Verrai disconnesso dalla stanza.</p>"
+      : "<p>Vuoi uscire dalla partita? Lo stato è salvato automaticamente: potrai riprenderla dal menù.</p>";
+    modal("🚪 Uscire dalla partita?", body, [
+      { label: "🚪 Esci", primary: true, onClick: () => { if (!onlineMode && game) saveGame(true); try { if (window.IGNet) window.IGNet.close(); } catch (e) {} location.reload(); } },
+      { label: "Annulla", onClick: closeModal },
+    ]);
+  }
+
   // ---------------------------------------------------------------- INIT
   function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
@@ -2557,8 +2589,9 @@
     // Animazioni on/off (PC lenti)
     const animB = $("animToggle");
     if (animB) { updateAnimBtn(); animB.addEventListener("click", () => { animEnabled = !animEnabled; localStorage.setItem("ig_anim", animEnabled ? "1" : "0"); applyAnim(); updateAnimBtn(); if (animEnabled) startShootingStars(); }); }
-    // Salvataggio manuale
+    // Salvataggio manuale + uscita
     const saveB = $("saveBtn"); if (saveB) saveB.addEventListener("click", () => saveGame(false));
+    const exitB = $("exitBtn"); if (exitB) exitB.addEventListener("click", exitGame);
     // Ripresa da setup
     const resumeB = $("resumeBtn"); if (resumeB) resumeB.addEventListener("click", resumeLocalSave);
     updateResumeBtn();

@@ -720,9 +720,22 @@ button.primary:disabled { background: linear-gradient(180deg, #2a3a60, #22304e);
 /* Disattivazione animazioni (PC lenti) */
 .no-anim *, .no-anim *::before, .no-anim *::after { animation: none !important; transition: none !important; }
 
-/* HUD tinto in base al giocatore di turno */
-#topbar { border-bottom: 2px solid var(--turn, var(--border-bright));
-  box-shadow: 0 2px 20px var(--turn-soft, rgba(0,0,0,.4)); transition: border-color .4s, box-shadow .4s; }
+/* HUD tinto (ben evidente) in base al giocatore di turno */
+#topbar { border-bottom: 3px solid var(--turn, var(--border-bright));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--turn, #26406e) 34%, #0b1430), color-mix(in srgb, var(--turn, #26406e) 14%, #070d20));
+  box-shadow: 0 3px 26px color-mix(in srgb, var(--turn, #000) 45%, transparent);
+  transition: border-color .4s, background .4s, box-shadow .4s; }
+#sidebar { border-left: 3px solid color-mix(in srgb, var(--turn, #2f4a8e) 60%, #2f4a8e);
+  box-shadow: inset 3px 0 26px color-mix(in srgb, var(--turn, #000) 22%, transparent); transition: border-color .4s, box-shadow .4s; }
+#playerPanel { background: linear-gradient(180deg, color-mix(in srgb, var(--turn, #0e1730) 20%, transparent), transparent); }
+#boardWrap { box-shadow: inset 0 0 120px color-mix(in srgb, var(--turn, #000) 18%, transparent); transition: box-shadow .4s; }
+/* Cornice colorata attorno all'area di gioco */
+#game::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 40;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--turn, #2f4a8e) 55%, transparent); transition: box-shadow .4s; }
+.active-faction { padding: 3px 12px; border-radius: 20px;
+  background: color-mix(in srgb, var(--turn, #1a2750) 40%, #0b1430);
+  border: 1px solid color-mix(in srgb, var(--turn, #2f4a8e) 70%, transparent); }
 .game-clock { font-size: 12.5px; color: var(--muted); background: #0b1430; border: 1px solid #1c294c;
   padding: 2px 8px; border-radius: 8px; font-variant-numeric: tabular-nums; }
 
