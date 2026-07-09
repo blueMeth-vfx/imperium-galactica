@@ -787,3 +787,26 @@ button.primary:disabled { background: linear-gradient(180deg, #2a3a60, #22304e);
 /* Bot nella lobby */
 .lobby-player .ai-diff { margin-left: auto; padding: 3px 6px; font-size: 12px; }
 .lobby-player select + button { margin-left: 6px; }
+
+/* ============================================================
+   v42 — Tutorial + link manuale nel setup
+   ============================================================ */
+.setup-help { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+#tutorialBtn { border-color: var(--gold); color: var(--gold); font-weight: 700; }
+#tutorialBtn:hover { background: linear-gradient(180deg, rgba(255,216,107,.18), rgba(255,176,79,.08)); }
+#manualLink { color: var(--cyan); font-size: 13px; text-decoration: none; border-bottom: 1px dashed var(--cyan); padding-bottom: 1px; }
+#manualLink:hover { color: #b6ecff; }
+
+/* Tutorial (modale a passi) */
+.tutorial { min-width: 300px; }
+.tut-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.tut-icon { font-size: 42px; filter: drop-shadow(0 0 10px rgba(120,170,255,.4)); }
+.tut-step { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.tut-title { margin: 2px 0 0; font-size: 21px; color: #eaf1ff; }
+.tut-body p { line-height: 1.6; margin: 8px 0; }
+.tut-list { margin: 8px 0; padding-left: 18px; line-height: 1.7; }
+.tut-list li { margin: 4px 0; }
+.tut-tip { background: rgba(95,214,255,.1); border-left: 3px solid var(--cyan); border-radius: 6px; padding: 8px 12px; font-size: 13.5px; }
+.tut-dots { display: flex; gap: 7px; justify-content: center; margin-top: 16px; }
+.tut-dot { width: 8px; height: 8px; border-radius: 50%; background: #2a3a63; transition: all .2s; }
+.tut-dot.on { background: var(--gold); box-shadow: 0 0 8px rgba(255,216,107,.6); transform: scale(1.25); }

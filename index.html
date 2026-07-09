@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imperium Galactica — Gioco da Tavolo</title>
-  <link rel="stylesheet" href="ui/styles.css?v=41" />
+  <link rel="stylesheet" href="ui/styles.css?v=42" />
 </head>
 <body>
   <!-- ===================== Schermata di setup ===================== -->
@@ -17,6 +17,11 @@
     <div class="setup-box">
       <h1>IMPERIUM GALACTICA</h1>
       <p class="subtitle">Il Gioco da Tavolo — versione digitale</p>
+
+      <div class="setup-help">
+        <button id="tutorialBtn">📖 Come si gioca — Tutorial</button>
+        <a id="manualLink" href="docs/Manuale_Imperium_Galactica.pdf" download>⬇ Scarica il manuale (PDF)</a>
+      </div>
 
       <div class="mode-tabs">
         <button id="tabLocal" class="mode-tab active">🎮 Locale (hot-seat)</button>
@@ -119,17 +124,17 @@
   </div>
 
   <!-- Engine (logica pura). Il ?v= forza il refresh dopo gli aggiornamenti. -->
-  <script src="data/gamedata.js?v=41"></script>
-  <script src="engine/config.js?v=41"></script>
-  <script src="engine/hex.js?v=41"></script>
-  <script src="engine/game.js?v=41"></script>
-  <script src="engine/combat.js?v=41"></script>
-  <script src="engine/casino.js?v=41"></script>
-  <script src="engine/market.js?v=41"></script>
-  <script src="engine/ai.js?v=41"></script>
+  <script src="data/gamedata.js?v=42"></script>
+  <script src="engine/config.js?v=42"></script>
+  <script src="engine/hex.js?v=42"></script>
+  <script src="engine/game.js?v=42"></script>
+  <script src="engine/combat.js?v=42"></script>
+  <script src="engine/casino.js?v=42"></script>
+  <script src="engine/market.js?v=42"></script>
+  <script src="engine/ai.js?v=42"></script>
   <!-- Interfaccia -->
-  <script src="ui/sound.js?v=41"></script>
-  <script src="ui/net.js?v=41"></script>
-  <script src="ui/ui.js?v=41"></script>
+  <script src="ui/sound.js?v=42"></script>
+  <script src="ui/net.js?v=42"></script>
+  <script src="ui/ui.js?v=42"></script>
 </body>
 </html>

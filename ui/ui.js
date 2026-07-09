@@ -2511,6 +2511,68 @@
     checkTurn();
   }
 
+  // ---------------------------------------------------------------- TUTORIAL
+  const TUTORIAL_PAGES = [
+    { icon: "🌌", title: "Benvenuto, Comandante",
+      html: "<p><b>Imperium Galactica</b> è un gioco di conquista spaziale a turni. Parti da un angolo della galassia con una piccola flotta e devi <b>espanderti, colonizzare pianeti e sconfiggere le altre fazioni</b>.</p>" +
+        "<p><b>Obiettivo:</b> essere l'ultima fazione rimasta — elimina tutte le altre conquistandone i pianeti e distruggendone le flotte.</p>" +
+        "<p class='tut-tip'>💡 Puoi giocare in <b>locale</b> (stesso dispositivo, anche contro l'IA), <b>online</b> con gli amici, o aggiungere <b>bot IA</b> nelle partite online.</p>" },
+    { icon: "🔄", title: "Le 4 fasi del turno",
+      html: "<p>Ad ogni turno svolgi <b>4 fasi</b> nell'ordine (l'indicatore in alto le mostra con icona e colore):</p>" +
+        "<ul class='tut-list'>" +
+        "<li><b>💰 Riscossione</b> — automatica: incassi Ndri e materie dai tuoi pianeti.</li>" +
+        "<li><b>🏭 Produzione</b> — costruisci navi e carri sui pianeti che hanno le fabbriche.</li>" +
+        "<li><b>🚀 Movimento</b> — sposta le flotte per esplorare, colonizzare e attaccare.</li>" +
+        "<li><b>🏗️ Costruzione</b> — costruisci 1 edificio per pianeta e commercia al mercato.</li></ul>" +
+        "<p class='tut-tip'>💡 Premi <b>Avanza fase ▸</b> o la <b>barra spaziatrice</b> per passare alla fase (o al turno) successiva.</p>" },
+    { icon: "🚀", title: "Flotte e movimento",
+      html: "<p>Nella fase <b>Movimento</b> seleziona una flotta e clicca una cella <b>adiacente evidenziata in oro</b> per spostarti di un passo.</p>" +
+        "<ul class='tut-list'>" +
+        "<li>🚀 <b>Caccia</b> — economico, attacca due volte. Flotte di soli Caccia muovono di <b>2</b> caselle.</li>" +
+        "<li>🛸 <b>Torpediniera</b> — forte in attacco/difesa, trasporta carri.</li>" +
+        "<li>🪐 <b>Nave Colonia</b> — serve a colonizzare i pianeti (viene consumata).</li>" +
+        "<li>🪖 <b>Carri</b> — truppe di terra per conquistare e presidiare i pianeti.</li></ul>" +
+        "<p class='tut-tip'>💡 Usa <b>Dividi flotta</b> per staccare alcune unità in una nuova flotta. Le celle sconosciute (col «?») si rivelano quando ci arrivi.</p>" },
+    { icon: "🪐", title: "Pianeti ed edifici",
+      html: "<p>Porta una <b>Nave Colonia</b> su un pianeta libero e premi <b>Colonizza</b>. I pianeti danno Ndri e materie ogni turno (economia × base).</p>" +
+        "<p>Nella fase Costruzione costruisci fino a <b>9 edifici</b> per pianeta:</p>" +
+        "<ul class='tut-list'>" +
+        "<li>🚀 <b>Fabbrica Navale</b> / 🏭 <b>Fabbrica Carri</b> — producono unità.</li>" +
+        "<li>🏛 <b>Tesoreria</b> — aumenta il reddito del pianeta.</li>" +
+        "<li>🛰 <b>Cannone</b> — difesa spaziale (vale doppio). 🗼 <b>Torretta</b> — difesa di terra.</li></ul>" +
+        "<p class='tut-tip'>💡 Passa il mouse su un pianeta (o guarda le <b>carte-pianeta</b> in basso) per vederne statistiche, edifici e difese.</p>" },
+    { icon: "⚔️", title: "Combattimento",
+      html: "<p>Muovi una flotta su una <b>flotta o un pianeta nemico</b> per attaccare. Lo scontro si gioca <b>a dadi, round per round</b>, su una plancia di battaglia:</p>" +
+        "<ul class='tut-list'>" +
+        "<li>Ogni round l'aggressore lancia i dadi d'attacco, il difensore quelli di difesa: <b>tocca a te lanciare i tuoi</b>.</li>" +
+        "<li>Superate le difese spaziali, se hai <b>carri</b> puoi sbarcare e combattere a terra per conquistare il pianeta.</li>" +
+        "<li>Online i <b>dadi di difesa li tira l'avversario</b> in tempo reale.</li></ul>" +
+        "<p class='tut-tip'>💡 Attacca solo quando hai un buon vantaggio: le perdite sono definitive.</p>" },
+    { icon: "🛰️", title: "Mercato, Casinò e vittoria",
+      html: "<p>Alcune celle speciali offrono opportunità:</p>" +
+        "<ul class='tut-list'>" +
+        "<li>🛰 <b>Mercato</b> — compra navi/carri e scambia materie. I carri senza posto sulle navi si assegnano cliccando un tuo pianeta.</li>" +
+        "<li>🎲 <b>Casinò</b> — punta Ndri: 7 o 11 vinci, 2/3/12 perdi.</li>" +
+        "<li>☄️ <b>Asteroidi</b> — bonus o malus a sorpresa.</li></ul>" +
+        "<p>Continua a espanderti e a eliminare gli avversari finché <b>resti l'unica fazione</b>. Buona conquista! 🏆</p>" +
+        "<p class='tut-tip'>💡 Puoi salvare (💾) e riprendere la partita, e regolare audio/animazioni dalla barra in alto.</p>" },
+  ];
+  function showTutorial(page) {
+    page = Math.max(0, Math.min(TUTORIAL_PAGES.length - 1, page || 0));
+    const pg = TUTORIAL_PAGES[page];
+    const body = htmlEl("div", "tutorial");
+    body.innerHTML =
+      '<div class="tut-head"><span class="tut-icon">' + pg.icon + '</span><div><div class="tut-step">Passo ' + (page + 1) + " di " + TUTORIAL_PAGES.length + '</div><h2 class="tut-title">' + esc(pg.title) + "</h2></div></div>" +
+      '<div class="tut-body">' + pg.html + "</div>" +
+      '<div class="tut-dots">' + TUTORIAL_PAGES.map((_, i) => '<span class="tut-dot' + (i === page ? " on" : "") + '"></span>').join("") + "</div>";
+    const actions = [];
+    if (page > 0) actions.push({ label: "◂ Indietro", onClick: () => showTutorial(page - 1) });
+    if (page < TUTORIAL_PAGES.length - 1) actions.push({ label: "Avanti ▸", primary: true, onClick: () => showTutorial(page + 1) });
+    else actions.push({ label: "🎮 Ho capito!", primary: true, onClick: closeModal });
+    actions.push({ label: "Scarica il manuale ⬇", onClick: () => { const a = document.createElement("a"); a.href = "docs/Manuale_Imperium_Galactica.pdf"; a.download = ""; a.click(); } });
+    modal("📖 Tutorial", body, actions);
+  }
+
   // ---------------------------------------------------------------- HELP
   function showHelp() {
     const body = htmlEl("div");
@@ -2577,6 +2639,7 @@
     $("startBtn").addEventListener("click", startGame);
     $("advanceBtn").addEventListener("click", advancePhase);
     $("helpBtn").addEventListener("click", showHelp);
+    { const tb = $("tutorialBtn"); if (tb) tb.addEventListener("click", () => showTutorial(0)); }
     $("confirmToggle").addEventListener("click", toggleConfirmEvents);
     updateConfirmBtn();
     initOnlineUI();
@@ -2599,13 +2662,16 @@
     setInterval(() => { if (game && !$("game").classList.contains("hidden") && game.winner == null && !document.hidden) { game.playSeconds = (game.playSeconds || 0) + 1; updateClock(); } }, 1000);
     document.addEventListener("pointerdown", () => Snd.resume(), true);
     document.addEventListener("click", (e) => { if (e.target && e.target.closest && e.target.closest("button")) Snd.click(); }, true);
-    // Barra spaziatrice: avanza fase/turno (fuori da campi di testo e finestre)
+    // Barra spaziatrice: conferma l'evento in coda, altrimenti avanza fase/turno
     document.addEventListener("keydown", (e) => {
       if (e.code !== "Space") return;
       const t = e.target;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // 1) Se c'è un banner-evento da confermare ("Ho letto ✓"), lo spazio lo conferma
+      const ok = document.querySelector("#bannerHost .flash-banner .fb-ok");
+      if (ok) { e.preventDefault(); ok.click(); return; }
       if (!game || $("game").classList.contains("hidden")) return;
-      if (!$("modal").classList.contains("hidden")) return; // finestra aperta: lo spazio non avanza
+      if (!$("modal").classList.contains("hidden")) return; // altra finestra aperta: lo spazio non avanza
       e.preventDefault();
       advancePhase();
     });
