@@ -490,7 +490,9 @@
       card.style.setProperty("--rot", ((i - mid) * 5) + "deg");
       card.style.setProperty("--lift", (Math.abs(i - mid) * 8) + "px");
       card.style.setProperty("--fc", pl.color);
-      card.innerHTML = pcardHTML(cell);
+      // .pcin è la parte visiva che si alza; .pcard resta FERMO come zona
+      // sensibile al mouse → niente flickering quando la carta si solleva
+      card.innerHTML = '<div class="pcin">' + pcardHTML(cell) + "</div>";
       card.onclick = () => { sel.cellKey = Hex.key(cell.q, cell.r); sel.fleetId = null; flyToCell(cell.q, cell.r); render(); };
       card.onmouseenter = () => pulseCell(cell.q, cell.r); // evidenzia il pianeta sul tabellone
       hand.appendChild(card);
@@ -1265,6 +1267,8 @@
             const b = htmlEl("button", "prod-btn");
             b.innerHTML = '<span class="pb-name">' + legendSwatch(t) + " " + CFG.SHIP_NAMES[t] + '</span>' +
               '<span class="pb-cost">💰' + (S.costo / 1000) + 'k · ⛽' + S.carburante + ' · 🔩' + S.metallo + '</span>';
+            // non permettibile → grigio e non cliccabile
+            b.disabled = p.money < S.costo || p.res.carburante < S.carburante || p.res.metallo < S.metallo || (capN - cell.producedNavi) <= 0;
             b.onclick = () => act(game.produceShip(q, r, t, 1), "🏭 " + CFG.SHIP_NAMES[t] + " prodotto");
             body.appendChild(b);
           }
@@ -1275,6 +1279,8 @@
           const b = htmlEl("button", "prod-btn");
           b.innerHTML = '<span class="pb-name">' + legendSwatch("carri") + ' Carro Armato</span>' +
             '<span class="pb-cost">💰' + (cc.costo / 1000) + 'k · ⛽' + cc.carburante + ' · 🔩' + cc.metallo + '</span>';
+          b.disabled = p.money < cc.costo || p.res.carburante < cc.carburante || p.res.metallo < cc.metallo ||
+            (capC - cell.producedCarri) <= 0 || cell.garrison >= CFG.MAX_CARRI_PIANETA;
           b.onclick = () => act(game.produceCarri(q, r, 1));
           body.appendChild(b);
           body.appendChild(htmlEl("div", "info-line muted", "max " + (capC - cell.producedCarri) + "/" + capC + " carri rimasti questo turno"));
@@ -1283,9 +1289,12 @@
       if (game.phase === "costruzione") {
         body.appendChild(htmlEl("h3", null, "Costruisci edificio (1/turno)"));
         const grid = htmlEl("div", "action-grid");
+        const slotsUsed = Object.values(cell.buildings).reduce((a, c2) => a + c2, 0);
         for (const t in CFG.BUILDINGS) {
           const B = CFG.BUILDINGS[t];
           const b = htmlEl("button", "small", B.nome + " (" + (B.ndri / 1000) + "k+" + B.pietra + "P)");
+          // non permettibile → grigio e non cliccabile
+          b.disabled = p.money < B.ndri || p.res.pietra < B.pietra || slotsUsed >= 9;
           b.onclick = () => { const r2 = game.buildBuilding(q, r, t); if (r2.ok) flashBanner("discovery", "🏗️ Costruzione", "🏗️", B.nome, "su " + cell.planet.data.nome); act(r2); };
           grid.appendChild(b);
         }
@@ -1360,6 +1369,7 @@
     const act = $("modalActions"); act.innerHTML = "";
     for (const a of actions) {
       const b = htmlEl("button", a.primary ? "primary" : null, a.label);
+      if (a.disabled) b.disabled = true;
       b.onclick = a.onClick; act.appendChild(b);
     }
     $("modal").classList.remove("hidden");
@@ -2062,7 +2072,7 @@
       }
 
       const actions = [];
-      if (!entry.bought) actions.push({ label: "🛒 Acquista il deal (" + (card.prezzo / 1000) + "k)", primary: true, onClick: () => tryBuyCard() });
+      if (!entry.bought) actions.push({ label: "🛒 Acquista il deal (" + (card.prezzo / 1000) + "k)", primary: true, disabled: p.money < card.prezzo, onClick: () => tryBuyCard() });
       actions.push({ label: "Chiudi", onClick: () => { closeModal(); render(); } });
       modal("🛒 Mercato", body, actions);
     }

@@ -541,13 +541,20 @@ button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation;
 /* ---------- Mano delle carte-pianeta (stile gioco di carte) ---------- */
 #planetHand { position: fixed; bottom: -30px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: flex-end; z-index: 46; pointer-events: none; }
-.pcard { pointer-events: auto; position: relative; width: 116px; height: 164px; margin: 0 -17px; cursor: pointer;
+/* .pcard = zona sensibile FERMA; .pcin = parte visiva che si alza.
+   Il mouse "vede" solo il riquadro fermo → la carta non fa più su e giù. */
+.pcard { pointer-events: auto; position: relative; width: 116px; height: 164px; margin: 0 -17px; cursor: pointer; }
+.pcard:hover { z-index: 61; }
+/* A carta alzata la zona sensibile si estende (invisibile) fin sopra la carta
+   sollevata: puoi seguirla col mouse senza farla ricadere */
+.pcard:hover::before { content: ""; position: absolute; left: -66px; right: -66px; top: -320px; bottom: 0; }
+.pcard .pcin { position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, #16224a 0%, #0b1330 55%, #080e24 100%);
   border: 1px solid #34497f; border-radius: 13px; padding: 7px 9px 6px;
   box-shadow: 0 10px 26px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.07);
   transform: rotate(var(--rot)) translateY(var(--lift)); transform-origin: 50% 130%;
   transition: transform .3s cubic-bezier(.2,.85,.3,1.2), box-shadow .3s; }
-.pcard:hover { transform: rotate(0deg) translateY(-118px) scale(1.85); z-index: 61;
+.pcard:hover .pcin { transform: rotate(0deg) translateY(-118px) scale(1.85);
   box-shadow: 0 30px 70px rgba(0,0,0,.8), 0 0 34px rgba(100,150,255,.4);
   border-color: var(--fc, #4f90ff); }
 .pcard .pcd-band { position: absolute; top: 0; left: 0; right: 0; height: 4px; border-radius: 13px 13px 0 0;
@@ -696,3 +703,11 @@ button.primary:hover::after { left: 130%; }
 @keyframes bfdie { 0% { opacity: 1; } 30% { opacity: 1; transform: scale(1.06) rotate(4deg); }
   100% { opacity: 0; transform: scale(.35) rotate(24deg); } }
 .bf-exp, .bf-shield { pointer-events: none; }
+
+/* ============================================================
+   v39 — Non permettibile in grigino, fix carta che fa su e giù
+   ============================================================ */
+/* Ciò che non puoi costruire/comprare: grigio chiaro, spento, non cliccabile */
+button:disabled { opacity: .38; filter: grayscale(.85) brightness(1.05); box-shadow: none; border-color: #2a3450; color: #aab2c8; }
+button:disabled:hover { transform: none; background: linear-gradient(180deg, #1a2750, #131e3e); }
+button.primary:disabled { background: linear-gradient(180deg, #2a3a60, #22304e); }
