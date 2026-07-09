@@ -6,7 +6,7 @@
   const IG = window.IG;
   const CFG = IG.CONFIG;
   const Hex = IG.Hex;
-  const Snd = window.IGSound || { resume() {}, click() {}, turnStart() {}, passTurn() {}, chatSend() {}, chatReceive() {}, dice() {}, startMusic() {}, stopMusic() {}, toggle() { return true; }, muted: false };
+  const Snd = window.IGSound || { resume() {}, click() {}, turnStart() {}, passTurn() {}, chatSend() {}, chatReceive() {}, dice() {}, move() {}, startMusic() {}, stopMusic() {}, toggleSfx() { return true; }, toggleMusic() { return true; }, sfxMuted: false, musicMuted: false };
   const SVGNS = "http://www.w3.org/2000/svg";
   const HEX_SIZE = 40;
   const MARGIN = HEX_SIZE + 52; // spazio extra per gli inventari agli angoli (sopra/sotto)
@@ -287,6 +287,7 @@
       const m = moves[i++];
       const pl = game.player(m.owner) || { color: "#fff", name: "?" };
       showMoveArrow(m.fromQ, m.fromR, m.toQ, m.toR, pl.color);
+      Snd.move();
       bottomInfo('<b style="color:' + pl.color + '">' + esc(pl.name) + "</b> muove → (" + m.toQ + "," + m.toR + ")", pl.color);
       setTimeout(next, 650);
     })();
@@ -1115,8 +1116,11 @@
       render(); // rende con l'animazione di scivolamento
       if (newly) pulseCell(q, r);
     }
-    // Freccia a scomparsa dello spostamento
-    if (ev.fromQ !== undefined && (ev.fromQ !== q || ev.fromR !== r)) showMoveArrow(ev.fromQ, ev.fromR, q, r, game.player(game.currentPlayer).color);
+    // Freccia a scomparsa dello spostamento + whoosh del razzo
+    if (ev.fromQ !== undefined && (ev.fromQ !== q || ev.fromR !== r)) {
+      showMoveArrow(ev.fromQ, ev.fromR, q, r, game.player(game.currentPlayer).color);
+      Snd.move();
+    }
     focusCell(q, r); // se la vista è zoomata, segue la flotta
 
 
@@ -1562,11 +1566,13 @@
 
     // --- Combattimento in rete: ognuno lancia SOLO i propri dadi ---
     if (ctx.net) {
+      // Appena i miei dadi sono completi li invio SEMPRE, anche se quelli
+      // dell'avversario sono già arrivati (altrimenti lui resta in attesa).
+      if (yoursDone) sendMyRoll(yours);
       if (!yoursDone) {
         acts.appendChild(htmlEl("div", "ca-hint", "👆 Clicca i tuoi dadi (o lanciali tutti)"));
         const all = htmlEl("button", "primary", "Lancia i miei dadi 🎲"); all.onclick = () => { s.rollAll(yours); Snd.dice(); renderCombat(); }; acts.appendChild(all);
       } else if (!enemyDone) {
-        sendMyRoll(yours);                 // invia i miei dadi all'avversario
         acts.appendChild(htmlEl("div", "ca-hint", "⏳ In attesa dei dadi dell'avversario…"));
         tryApplyEnemyRoll();               // se sono già arrivati, applicali
       } else {
@@ -1598,7 +1604,7 @@
       const face = htmlEl("span", "die-face"); face.textContent = slot.die != null ? DIE_GLYPH[slot.die] : "🎲"; d.appendChild(face);
       if (slot.mult > 1) { const m = htmlEl("span", "die-mult"); m.textContent = "×" + slot.mult; d.appendChild(m); }
       if (slot.die == null && clickable) {
-        d.onclick = () => { combatCtx.session.rollSlot(slot); tumbleSingle(face, slot.die, () => renderCombat()); };
+        d.onclick = () => { combatCtx.session.rollSlot(slot); Snd.dice(); tumbleSingle(face, slot.die, () => renderCombat()); };
       }
       wrap.appendChild(d);
     }
@@ -2057,6 +2063,7 @@
       if (i >= shown.length) { setTimeout(done, 200); return; }
       const m = shown[i++];
       showMoveArrow(m.fromQ, m.fromR, m.toQ, m.toR, aiPlayer.color);
+      Snd.move();
       bottomInfo('🤖 <b style="color:' + aiPlayer.color + '">' + esc(aiPlayer.name) + '</b> sposta una flotta → (' + m.toQ + ',' + m.toR + ')', aiPlayer.color);
       setTimeout(next, 700);
     }
@@ -2120,15 +2127,27 @@
     $("confirmToggle").addEventListener("click", toggleConfirmEvents);
     updateConfirmBtn();
     initOnlineUI();
-    // Audio: pulsante mute + suono ai clic + sblocco al primo gesto
-    const mb = $("muteToggle");
-    if (mb) { updateMuteBtn(); mb.addEventListener("click", () => { Snd.toggle(); updateMuteBtn(); }); }
+    // Audio: pulsanti separati musica/effetti + suono ai clic + sblocco al primo gesto
+    const musB = $("musicToggle"), sfxB = $("sfxToggle");
+    if (musB) musB.addEventListener("click", () => { Snd.toggleMusic(); updateAudioBtns(); });
+    if (sfxB) sfxB.addEventListener("click", () => { Snd.toggleSfx(); updateAudioBtns(); });
+    updateAudioBtns();
     document.addEventListener("pointerdown", () => Snd.resume(), true);
     document.addEventListener("click", (e) => { if (e.target && e.target.closest && e.target.closest("button")) Snd.click(); }, true);
+    // Barra spaziatrice: avanza fase/turno (fuori da campi di testo e finestre)
+    document.addEventListener("keydown", (e) => {
+      if (e.code !== "Space") return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (!game || $("game").classList.contains("hidden")) return;
+      if (!$("modal").classList.contains("hidden")) return; // finestra aperta: lo spazio non avanza
+      e.preventDefault();
+      advancePhase();
+    });
   });
-  function updateMuteBtn() {
-    const btn = $("muteToggle"); if (!btn) return;
-    btn.textContent = Snd.muted ? "🔇 Audio" : "🔊 Audio";
-    btn.classList.toggle("on", !Snd.muted);
+  function updateAudioBtns() {
+    const m = $("musicToggle"), s = $("sfxToggle");
+    if (m) { m.textContent = Snd.musicMuted ? "🎵 Musica: off" : "🎵 Musica"; m.classList.toggle("on", !Snd.musicMuted); }
+    if (s) { s.textContent = Snd.sfxMuted ? "🔇 Effetti: off" : "🔊 Effetti"; s.classList.toggle("on", !Snd.sfxMuted); }
   }
 })();

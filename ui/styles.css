@@ -660,3 +660,17 @@ button.primary:hover::after { left: 130%; }
 /* Fase attiva del turno: alone che respira */
 .step.active { animation: stepbreathe 2.4s ease-in-out infinite; }
 @keyframes stepbreathe { 0%,100% { box-shadow: 0 0 10px rgba(255,216,107,.14); } 50% { box-shadow: 0 0 20px rgba(255,216,107,.34); } }
+
+/* ============================================================
+   v37 — Fix flickering carta pianeta, audio separato
+   ============================================================ */
+
+/* SOLO gli esagoni e le flotte ricevono il mouse: ogni decorazione
+   (anelli, ombre, stelle, satelliti, nebbia...) è trasparente al puntatore.
+   Questo elimina il flickering della carta pianeta al passaggio del mouse. */
+#board * { pointer-events: none; }
+#board .hex { pointer-events: auto; }
+#board .fleet-badge, #board .fleet-badge * { pointer-events: auto; }
+
+/* Pulsanti audio separati */
+#musicToggle.on, #sfxToggle.on { border-color: var(--accent); color: #cfe0ff; }
