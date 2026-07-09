@@ -711,3 +711,66 @@ button.primary:hover::after { left: 130%; }
 button:disabled { opacity: .38; filter: grayscale(.85) brightness(1.05); box-shadow: none; border-color: #2a3450; color: #aab2c8; }
 button:disabled:hover { transform: none; background: linear-gradient(180deg, #1a2750, #131e3e); }
 button.primary:disabled { background: linear-gradient(180deg, #2a3a60, #22304e); }
+
+/* ============================================================
+   v40 — Batch grosso: fasi, tinta HUD, dadi a pallini, mano
+   trascinabile, no-anim, icone, dropdown split, bot lobby
+   ============================================================ */
+
+/* Disattivazione animazioni (PC lenti) */
+.no-anim *, .no-anim *::before, .no-anim *::after { animation: none !important; transition: none !important; }
+
+/* HUD tinto in base al giocatore di turno */
+#topbar { border-bottom: 2px solid var(--turn, var(--border-bright));
+  box-shadow: 0 2px 20px var(--turn-soft, rgba(0,0,0,.4)); transition: border-color .4s, box-shadow .4s; }
+.game-clock { font-size: 12.5px; color: var(--muted); background: #0b1430; border: 1px solid #1c294c;
+  padding: 2px 8px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+
+/* Fasi: ognuna con icona e colore proprio */
+.step { gap: 5px; }
+.step .step-ic { font-size: 15px; line-height: 1; filter: grayscale(.4) opacity(.7); }
+.step.active .step-ic { filter: none; }
+.step.done { color: #7fe0a0; }
+.step.ph-riscossione.active { color: #ffd86b; background: rgba(255,216,107,.12); border-color: rgba(255,216,107,.5); box-shadow: 0 0 14px rgba(255,216,107,.25); }
+.step.ph-produzione.active  { color: #5fd6ff; background: rgba(95,214,255,.12); border-color: rgba(95,214,255,.5); box-shadow: 0 0 14px rgba(95,214,255,.25); }
+.step.ph-movimento.active   { color: #6be08a; background: rgba(107,224,138,.12); border-color: rgba(107,224,138,.5); box-shadow: 0 0 14px rgba(107,224,138,.25); }
+.step.ph-costruzione.active { color: #ffb04f; background: rgba(255,176,79,.12); border-color: rgba(255,176,79,.5); box-shadow: 0 0 14px rgba(255,176,79,.25); }
+.step.active { animation: none; } /* la tinta di fase sostituisce il respiro giallo */
+
+/* Icone edifici nei pulsanti costruzione */
+.build-btn { display: inline-flex; align-items: center; gap: 5px; }
+.build-btn .bb-ic { font-size: 15px; }
+.build-btn .bb-cost { color: #9fb0d6; font-size: 11px; margin-left: 2px; }
+
+/* Dropdown per dividere le flotte */
+.split-sel { padding: 5px 8px; background: #070d20; border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; font-size: 14px; min-width: 70px; }
+.split-sel:disabled { opacity: .4; }
+
+/* Dadi d'inizio: dado cliccabile */
+.sd-die { width: 54px; height: 54px; display: flex; align-items: center; justify-content: center;
+  border-radius: 12px; background: #0a1230; border: 1px solid #1c294c; cursor: default; }
+.sd-die .sd-q { font-size: 30px; }
+.sd-die .die-face { font-size: 40px; }
+.sd-die.rollable { cursor: pointer; border-color: var(--gold); box-shadow: 0 0 16px rgba(255,216,107,.3); animation: reachpulse 1.2s ease-in-out infinite; }
+.sd-die.rollable:hover { background: #12204a; }
+.pd-pop { animation: diepop .3s ease; }
+
+/* Dado a pallini del casinò (SVG, robusto ovunque) */
+.pip-die { width: 66px; height: 66px; filter: drop-shadow(0 3px 5px rgba(0,0,0,.5)); }
+.dice-line.big { display: flex; justify-content: center; gap: 20px; margin: 18px 0; }
+
+/* Mano delle carte-pianeta: ora con impugnatura e trascinabile */
+#planetHand { flex-direction: column; align-items: center; gap: 0; }
+.hand-grip { pointer-events: auto; cursor: grab; user-select: none; font-size: 12px; font-weight: 700;
+  color: #c7d2ee; background: rgba(9,14,32,.92); border: 1px solid var(--border-bright);
+  border-bottom: none; border-radius: 10px 10px 0 0; padding: 4px 14px; box-shadow: 0 -4px 14px rgba(0,0,0,.4); }
+.hand-grip:active { cursor: grabbing; }
+.hand-grip .assign-hint { color: var(--gold); font-weight: 600; }
+.hand-fan { display: flex; align-items: flex-end; }
+.pcard.assignable .pcin { border-color: var(--gold); box-shadow: 0 10px 26px rgba(0,0,0,.65), 0 0 16px rgba(255,216,107,.5); }
+.pcard.assignable { cursor: pointer; }
+
+/* Bot nella lobby */
+.lobby-player .ai-diff { margin-left: auto; padding: 3px 6px; font-size: 12px; }
+.lobby-player select + button { margin-left: 6px; }

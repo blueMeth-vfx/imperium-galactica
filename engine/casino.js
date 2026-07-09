@@ -29,7 +29,7 @@
     if (amount < minBet) return { ok: false, msg: "Puntata minima ora: " + minBet + " Ndri." };
     if (p.money < amount) return { ok: false, msg: "Ndri insufficienti." };
     p.money -= amount; s.banco += amount;
-    this.say(p.colorName + " punta " + amount + " al Casinò (banco: " + s.banco + ").");
+    this.say(p.name + " punta " + amount + " al Casinò (banco: " + s.banco + ").");
     return { ok: true, banco: s.banco };
   };
 
@@ -43,13 +43,13 @@
     if (sum === 7 || sum === 11) {
       const vincita = s.banco * 2;
       p.money += vincita;
-      this.say("🎲 Casinò " + p.colorName + ": " + d1 + "+" + d2 + "=" + sum + " → VINCE! Incassa " + vincita + " Ndri.");
+      this.say("🎲 Casinò " + p.name + ": " + d1 + "+" + d2 + "=" + sum + " → VINCE! Incassa " + vincita + " Ndri.");
       s.banco = 0; outcome = "win";
     } else if (sum === 2 || sum === 3 || sum === 12) {
-      this.say("🎲 Casinò " + p.colorName + ": " + d1 + "+" + d2 + "=" + sum + " → PERDE il banco (" + s.banco + ").");
+      this.say("🎲 Casinò " + p.name + ": " + d1 + "+" + d2 + "=" + sum + " → PERDE il banco (" + s.banco + ").");
       s.banco = 0; outcome = "lose";
     } else {
-      this.say("🎲 Casinò " + p.colorName + ": " + d1 + "+" + d2 + "=" + sum + " → pareggio (banco resta " + s.banco + ").");
+      this.say("🎲 Casinò " + p.name + ": " + d1 + "+" + d2 + "=" + sum + " → pareggio (banco resta " + s.banco + ").");
       outcome = "push";
     }
     return { ok: true, d1, d2, sum, outcome, banco: s.banco };
@@ -58,7 +58,7 @@
   // Il giocatore lascia il tavolo dopo un pareggio: perde quanto già scommesso.
   G.prototype.casinoLeave = function (pid) {
     const s = this._casinoSession(pid);
-    if (s.banco > 0) this.say(this.player(pid).colorName + " lascia il Casinò perdendo " + s.banco + " Ndri.");
+    if (s.banco > 0) this.say(this.player(pid).name + " lascia il Casinò perdendo " + s.banco + " Ndri.");
     s.banco = 0;
     return { ok: true };
   };

@@ -175,8 +175,8 @@
     if (this.fleetShipCount(def) === 0) this._destroyFleet(def);
     if (this.fleetShipCount(att) === 0) this._destroyFleet(att);
     let advanced = false;
-    if (winner === "A") { this.say("  " + this.player(att.owner).colorName + " vince lo scontro."); this._enterCell(att, this.cell(q, r), {}); advanced = true; }
-    else if (winner === "B") this.say("  " + this.player(def.owner).colorName + " respinge l'attacco.");
+    if (winner === "A") { this.say("  " + this.player(att.owner).name + " vince lo scontro."); this._enterCell(att, this.cell(q, r), {}); advanced = true; }
+    else if (winner === "B") this.say("  " + this.player(def.owner).name + " respinge l'attacco.");
     else this.say("  Scontro inconcludente.");
     if (att && this.fleetById(att.id)) att.stepsLeft = 0;
     this._checkElimination();
@@ -250,7 +250,7 @@
     if (!att || !def) return { ok: false };
     const q = def.q, r = def.r;
     this.say("⚔ Scontro spaziale a (" + q + "," + r + "): " +
-      this.player(att.owner).colorName + " attacca " + this.player(def.owner).colorName + ".");
+      this.player(att.owner).name + " attacca " + this.player(def.owner).name + ".");
     const uA = this._shipUnits(att), uB = this._shipUnits(def);
     const res = this._battle(uA, uB, { ground: false });
     for (const l of res.log) this.say("  " + l);
@@ -261,11 +261,11 @@
     if (this.fleetShipCount(att) === 0) { this._destroyFleet(att); }
 
     if (res.winner === "A") {
-      this.say("  " + this.player(att.owner).colorName + " vince lo scontro.");
+      this.say("  " + this.player(att.owner).name + " vince lo scontro.");
       const cell = this.cell(q, r);
       this._enterCell(att, cell, {}); advanced = true;
     } else if (res.winner === "B") {
-      this.say("  " + this.player(def.owner).colorName + " respinge l'attacco.");
+      this.say("  " + this.player(def.owner).name + " respinge l'attacco.");
     } else {
       this.say("  Scontro inconcludente: l'attaccante si ferma.");
     }
@@ -282,7 +282,7 @@
     const cell = this.cell(q, r);
     if (!att || !cell) return { ok: false };
     const defFleet = this.fleets.find((o) => o.q === q && o.r === r && o.owner === cell.owner);
-    this.say("⚔ Attacco al pianeta " + cell.planet.data.nome + " (" + this.player(cell.owner).colorName + ").");
+    this.say("⚔ Attacco al pianeta " + cell.planet.data.nome + " (" + this.player(cell.owner).name + ").");
 
     // --- Fase spaziale: navi difensori + Cannoni (lastLine) ---
     const uA = this._shipUnits(att);

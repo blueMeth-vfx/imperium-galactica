@@ -78,7 +78,14 @@ export class Room {
       if (conn.seat !== this.hostSeat || this.started) return;
       this.started = true;
       this.numPlayers = m.numPlayers || this.seats.length;
-      this.seats = this.seats.slice(0, this.numPlayers);
+      // Se lo stato porta i nomi dei giocatori (bot inclusi, o partita salvata),
+      // adotta quei posti così i rientri per nome combaciano (ripresa online).
+      if (m.state && Array.isArray(m.state.players) && m.state.players.length) {
+        this.seats = m.state.players.map((p) => p.name);
+      } else {
+        this.seats = this.seats.slice(0, this.numPlayers);
+      }
+      this.numPlayers = this.seats.length;
       this.game = m.state;
       this.all({ t: "started", state: this.game, roster: this.roster(), numPlayers: this.numPlayers, hostSeat: this.hostSeat });
       return;
@@ -86,10 +93,15 @@ export class Room {
 
     if (m.t === "state") {
       if (!this.started || !m.state) return;
-      // Solo il giocatore di turno (secondo l'ultimo stato) può aggiornare.
+      // Solo il giocatore di turno può aggiornare — MA l'host può inviare i turni
+      // dei bot IA (il cui posto non ha una connessione).
       if (this.game && this.game.currentPlayer !== conn.seat) {
-        this.send(conn, { t: "error", msg: "Non è il tuo turno." });
-        return;
+        const cp = this.game.players && this.game.players[this.game.currentPlayer];
+        const isBotTurn = cp && cp.isAI;
+        if (!(isBotTurn && conn.seat === this.hostSeat)) {
+          this.send(conn, { t: "error", msg: "Non è il tuo turno." });
+          return;
+        }
       }
       this.game = m.state;
       this.broadcast({ t: "state", state: this.game }, conn.id);

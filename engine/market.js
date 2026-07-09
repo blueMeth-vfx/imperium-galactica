@@ -37,14 +37,14 @@
         if (!cell || cell.owner !== p.id || cell.type !== "planet") return { ok: false, msg: "Pianeta non valido." };
         if (cell.garrison + card.qta > C().MAX_CARRI_PIANETA) return { ok: false, msg: "Massimo " + C().MAX_CARRI_PIANETA + " carri per pianeta." };
         p.money -= card.prezzo; cell.garrison += card.qta;
-        this.say(p.colorName + " acquista al Mercato " + card.qta + " Carri (assegnati a " + cell.planet.data.nome + ").");
+        this.say(p.name + " acquista al Mercato " + card.qta + " Carri (assegnati a " + cell.planet.data.nome + ").");
         return { ok: true, dest: "planet" };
       }
       // Prova a caricarli sulle navi
       const cap = this.fleetCarriCapacity(f) - f.carri;
       if (cap >= card.qta) {
         p.money -= card.prezzo; f.carri += card.qta;
-        this.say(p.colorName + " acquista al Mercato " + card.qta + " Carri (caricati sulla flotta).");
+        this.say(p.name + " acquista al Mercato " + card.qta + " Carri (caricati sulla flotta).");
         return { ok: true, dest: "fleet" };
       }
       // Nessuna capienza: servono pianeti colonizzati con posto
@@ -55,7 +55,7 @@
     // Navi
     if (this.countUnits(p.id, card.unita) + card.qta > C().LIMITS[card.unita]) return { ok: false, msg: "Limite di fazione raggiunto." };
     p.money -= card.prezzo; f.ships[card.unita] += card.qta;
-    this.say(p.colorName + " acquista al Mercato " + card.qta + " " + C().SHIP_NAMES[card.unita] + " per " + card.prezzo + " Ndri.");
+    this.say(p.name + " acquista al Mercato " + card.qta + " " + C().SHIP_NAMES[card.unita] + " per " + card.prezzo + " Ndri.");
     return { ok: true, dest: "fleet" };
   };
 
@@ -65,12 +65,12 @@
     if (sell) {
       if (p.res[materia] < qty) return { ok: false, msg: "Materia insufficiente." };
       p.res[materia] -= qty; p.money += qty * C().PREZZO_VENDITA_CUBO;
-      this.say(p.colorName + " vende " + qty + " " + materia + " per " + qty * C().PREZZO_VENDITA_CUBO + " Ndri.");
+      this.say(p.name + " vende " + qty + " " + materia + " per " + qty * C().PREZZO_VENDITA_CUBO + " Ndri.");
     } else {
       const cost = qty * C().PREZZO_ACQUISTO_CUBO;
       if (p.money < cost) return { ok: false, msg: "Ndri insufficienti." };
       p.money -= cost; p.res[materia] += qty;
-      this.say(p.colorName + " compra " + qty + " " + materia + " per " + cost + " Ndri.");
+      this.say(p.name + " compra " + qty + " " + materia + " per " + cost + " Ndri.");
     }
     return { ok: true };
   };

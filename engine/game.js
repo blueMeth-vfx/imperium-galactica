@@ -50,6 +50,11 @@
       return arr;
     }
     rollDie() { return 1 + Math.floor(this.rng() * 6); }
+    // Reddito effettivo di un pianeta al turno (base × economia + bonus Tesorerie)
+    planetIncome(cell) {
+      const cfg = C();
+      return cfg.SOLDI_BASE_PIANETA * cell.planet.data.economia + (cell.buildings.tesoreria || 0) * cfg.TESORERIA_BONUS;
+    }
 
     // -------------------------------------------------------------- setup
     _setup(playersDef) {
@@ -118,12 +123,13 @@
       // Dati per l'animazione dei dadi d'inizio (per la UI), in ordine di fazione
       this.orderRolls = rolls.map((r) => ({ id: r.id, roll: r.roll, name: this.players[r.id].name, color: this.players[r.id].color }));
       this.moveLog = []; // spostamenti recenti (per frecce e banner)
-      this.say("Lanci d'ordine: " + rolls.map((x) => this.players[x.id].colorName + "=" + x.roll).join(", ") +
-        ". Inizia " + this.players[this.startPlayer].colorName + ".");
+      this.say("Lanci d'ordine: " + rolls.map((x) => this.players[x.id].name + "=" + x.roll).join(", ") +
+        ". Inizia " + this.players[this.startPlayer].name + ".");
 
       this.turnNumber = 1;
       this.orderIdx = 0;
       this.phaseIdx = 0;
+      this.playSeconds = 0; // tempo di gioco accumulato (secondi), aggiornato dalla UI
       this.currentPlayer = this.turnOrder[0];
       this._beginPlayerTurn();
     }
@@ -207,7 +213,7 @@
         cell.producedNavi = 0; cell.producedCarri = 0; // reset cap di produzione
         cell.builtThisTurn = false;                    // reset "1 edificio per turno"
         const pl = cell.planet.data;
-        gainMoney += cfg.SOLDI_BASE_PIANETA * pl.economia + cell.buildings.tesoreria * cfg.TESORERIA_BONUS;
+        gainMoney += this.planetIncome(cell);
         for (const m of ["carburante", "metallo", "pietra"]) gainRes[m] += 1 * pl.moltMaterie[m];
       }
       p.money += gainMoney;
@@ -215,7 +221,7 @@
       // Memorizza l'esito per mostrarlo a schermo (UI)
       this.lastRiscossione = { playerId: p.id, money: gainMoney, res: gainRes, planets: planets.length };
       if (planets.length)
-        this.say(p.colorName + " riscuote " + gainMoney + " Ndri e materie (C" + gainRes.carburante + " M" + gainRes.metallo + " P" + gainRes.pietra + ").");
+        this.say(p.name + " riscuote " + gainMoney + " Ndri e materie (C" + gainRes.carburante + " M" + gainRes.metallo + " P" + gainRes.pietra + ").");
       this.phaseIdx = 1; // -> Produzione
     }
 
@@ -277,7 +283,7 @@
       let f = this.fleetOfAt(p.id, q, r);
       if (!f) f = this._newFleet(p.id, q, r, { caccia: 0, torpediniera: 0, colonia: 0 }, 0);
       f.ships[type] += qty;
-      this.say(p.colorName + " produce " + qty + " " + C().SHIP_NAMES[type] + " su " + cell.planet.data.nome + ".");
+      this.say(p.name + " produce " + qty + " " + C().SHIP_NAMES[type] + " su " + cell.planet.data.nome + ".");
       return { ok: true };
     }
 
@@ -298,7 +304,7 @@
       p.res.carburante -= cc.carburante * qty; p.res.metallo -= cc.metallo * qty; p.money -= cc.costo * qty;
       cell.producedCarri += qty;
       cell.garrison += qty;
-      this.say(p.colorName + " produce " + qty + " Carri su " + cell.planet.data.nome + ".");
+      this.say(p.name + " produce " + qty + " Carri su " + cell.planet.data.nome + ".");
       return { ok: true };
     }
 
@@ -343,7 +349,7 @@
       p.money -= B.ndri; p.res.pietra -= B.pietra;
       cell.buildings[type]++;
       cell.builtThisTurn = true;
-      this.say(p.colorName + " costruisce " + B.nome + " su " + cell.planet.data.nome + ".");
+      this.say(p.name + " costruisce " + B.nome + " su " + cell.planet.data.nome + ".");
       return { ok: true };
     }
 
@@ -387,12 +393,12 @@
             else break;
           }
         }
-        this.say("☄ Asteroidi: " + p.colorName + " perde " + (lost.length ? lost.join(", ") : "nessuna unità") + ".");
+        this.say("☄ Asteroidi: " + p.name + " perde " + (lost.length ? lost.join(", ") : "nessuna unità") + ".");
         return { tipo: "malus", lost: lost };
       } else {
         const q = card.quantita;
-        if (card.risorsa === "soldi") { p.money += q * 5000; this.say("☄ Asteroidi: " + p.colorName + " guadagna " + (q * 5000) + " Ndri."); return { tipo: "bonus", risorsa: "soldi", quantita: q, valore: q * 5000 }; }
-        p.res[card.risorsa] += q; this.say("☄ Asteroidi: " + p.colorName + " guadagna " + q + " " + card.risorsa + ".");
+        if (card.risorsa === "soldi") { p.money += q * 5000; this.say("☄ Asteroidi: " + p.name + " guadagna " + (q * 5000) + " Ndri."); return { tipo: "bonus", risorsa: "soldi", quantita: q, valore: q * 5000 }; }
+        p.res[card.risorsa] += q; this.say("☄ Asteroidi: " + p.name + " guadagna " + q + " " + card.risorsa + ".");
         return { tipo: "bonus", risorsa: card.risorsa, quantita: q };
       }
     }
@@ -501,7 +507,7 @@
       f.ships.colonia--;
       cell.owner = f.owner;
       cell.colonizedTurn = this.turnNumber; // potrà costruire solo dal turno successivo
-      this.say(this.player(f.owner).colorName + " colonizza " + cell.planet.data.nome + " (Nave Colonia consumata).");
+      this.say(this.player(f.owner).name + " colonizza " + cell.planet.data.nome + " (Nave Colonia consumata).");
       if (this.fleetShipCount(f) === 0) this._destroyFleet(f);
       return { ok: true };
     }
@@ -516,8 +522,8 @@
       cell.garrison = survivingTanks != null ? survivingTanks : 0;
       cell.colonizedTurn = this.turnNumber; // dopo la conquista si potrà costruire solo dal turno successivo
       // Gli edifici esistenti restano al conquistatore (G19). Difese azzerate se distrutte (gestito dal combat).
-      this.say(this.player(cell.owner).colorName + " conquista " + cell.planet.data.nome +
-        (oldOwner != null ? " (era di " + this.player(oldOwner).colorName + ")" : "") + ".");
+      this.say(this.player(cell.owner).name + " conquista " + cell.planet.data.nome +
+        (oldOwner != null ? " (era di " + this.player(oldOwner).name + ")" : "") + ".");
       return { ok: true };
     }
 
@@ -529,13 +535,13 @@
         const noFleets = this.fleetsOf(p.id).length === 0;
         if (noPlanets && noFleets) {
           p.eliminated = true;
-          this.say("☠ " + p.colorName + " è stato eliminato!");
+          this.say("☠ " + p.name + " è stato eliminato!");
         }
       }
       const alive = this.players.filter((p) => !p.eliminated);
       if (alive.length === 1) {
         this.winner = alive[0].id;
-        this.say("🏆 " + alive[0].colorName + " domina la galassia! Partita conclusa.");
+        this.say("🏆 " + alive[0].name + " domina la galassia! Partita conclusa.");
       } else if (alive.length === 0) {
         this.winner = -1;
         this.say("Tutte le fazioni eliminate: pareggio.");
@@ -549,7 +555,7 @@
     "players", "board", "fleets", "fleetSeq", "tileDeck", "planetPool",
     "asteroidDeck", "asteroidDiscard", "marketDeck", "turnOrder", "startPlayer",
     "direction", "turnNumber", "orderIdx", "phaseIdx", "currentPlayer", "winner",
-    "log", "lastRiscossione", "casinoSessions", "orderRolls", "moveLog",
+    "log", "lastRiscossione", "casinoSessions", "orderRolls", "moveLog", "playSeconds",
   ];
   Game.prototype.toState = function () {
     const o = {};

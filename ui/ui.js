@@ -14,12 +14,24 @@
 
   let game = null;
   let sel = { fleetId: null, cellKey: null };
+  let animEnabled = localStorage.getItem("ig_anim") !== "0"; // animazioni (off per PC lenti)
+  let carriAssign = null; // { fleetId, card } quando si assegnano carri cliccando un pianeta
+  function applyAnim() { document.body.classList.toggle("no-anim", !animEnabled); }
+  // Formatta secondi -> h:mm:ss / m:ss
+  function fmtTime(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    const pad = (n) => (n < 10 ? "0" + n : "" + n);
+    return h > 0 ? h + ":" + pad(m) + ":" + pad(ss) : m + ":" + pad(ss);
+  }
   let moveAnim = null; // {fleetId, fromX, fromY} per animare lo spostamento
   let startDiceShown = false; // dadi d'inizio già mostrati per questa partita
 
   // --- Stato multiplayer online ---
   let onlineMode = false;    // partita online (via server) vs locale hot-seat
   let myPlayerId = -1;       // il mio seat/fazione online
+  let lobbyBots = [];        // bot IA aggiunti dall'host nella lobby: [{difficulty}]
+  let botRunning = false;    // l'host sta eseguendo il turno di un bot
   let applyingRemote = false; // true mentre applico uno stato ricevuto (evita loop di sync)
   let lastLogLen = 0;        // per mostrare come banner i nuovi eventi ricevuti
   let lastMoveLen = 0;       // per mostrare le frecce dei nuovi spostamenti ricevuti
@@ -228,6 +240,10 @@
   }
   function renderLobby() {
     const N = window.IGNet;
+    const humans = (N.roster || []).length;
+    if (!N.isHost) lobbyBots = []; // solo l'host gestisce i bot
+    // Non superare 4 posti totali
+    while (humans + lobbyBots.length > 4) lobbyBots.pop();
     const box = $("lobbyRoster"); box.innerHTML = "";
     (N.roster || []).forEach((pl) => {
       const row = htmlEl("div", "lobby-player");
@@ -236,12 +252,37 @@
         (pl.connected ? "" : ' <span class="muted">(offline)</span>');
       box.appendChild(row);
     });
+    // Bot IA (occupano i posti dopo gli umani)
+    lobbyBots.forEach((bot, i) => {
+      const seat = humans + i;
+      const row = htmlEl("div", "lobby-player");
+      row.innerHTML = '<span class="dot" style="background:' + CFG.COLORS[seat] + '"></span> <b>🤖 Bot ' + (i + 1) + '</b> <span class="ai-pill">IA</span>';
+      if (N.isHost) {
+        const dsel = htmlEl("select", "ai-diff"); for (const key in CFG.DIFFICULTY) { const o = htmlEl("option"); o.value = key; o.textContent = CFG.DIFFICULTY[key].label; dsel.appendChild(o); }
+        dsel.value = bot.difficulty; dsel.onchange = () => { bot.difficulty = dsel.value; };
+        const rm = htmlEl("button", "small", "✕"); rm.onclick = () => { lobbyBots.splice(i, 1); renderLobby(); };
+        row.appendChild(dsel); row.appendChild(rm);
+      }
+      box.appendChild(row);
+    });
     const acts = $("lobbyActions"); acts.innerHTML = "";
     if (N.isHost) {
-      const n = (N.roster || []).length;
-      const b = htmlEl("button", "primary", "Avvia partita (" + n + " giocatori)");
-      b.disabled = n < 2; b.onclick = hostStart; acts.appendChild(b);
-      $("lobbyHint").textContent = n < 2 ? "Servono almeno 2 giocatori (aspetta che entrino con il codice)." : "Sei l'host: avvia quando siete tutti dentro.";
+      const total = humans + lobbyBots.length;
+      if (total < 4) {
+        const addBot = htmlEl("button", null, "🤖 Aggiungi Bot IA");
+        addBot.onclick = () => { lobbyBots.push({ difficulty: CFG.DEFAULT_DIFFICULTY }); renderLobby(); };
+        acts.appendChild(addBot);
+      }
+      const b = htmlEl("button", "primary", "Avvia partita (" + total + " giocatori)");
+      b.disabled = total < 2; b.onclick = hostStart; acts.appendChild(b);
+      // Riprendi una partita online salvata (l'host ripubblica lo stato salvato)
+      const sv = loadSaveData();
+      if (sv && sv.state) {
+        const load = htmlEl("button", null, "📂 Riprendi salvataggio (turno " + (sv.turn || "?") + ")");
+        load.onclick = () => { window.IGNet.start(sv.state, (sv.state.players || []).length); };
+        acts.appendChild(load);
+      }
+      $("lobbyHint").textContent = total < 2 ? "Servono almeno 2 giocatori: aspetta altri col codice o aggiungi un Bot IA." : "Sei l'host: avvia quando siete pronti.";
     } else {
       $("lobbyHint").textContent = "In attesa che l'host avvii la partita…";
     }
@@ -249,6 +290,7 @@
   function hostStart() {
     const N = window.IGNet;
     const players = (N.roster || []).map((pl) => ({ name: pl.name, isAI: false }));
+    lobbyBots.forEach((bot, i) => players.push({ name: "🤖 Bot " + (i + 1), isAI: true, difficulty: bot.difficulty }));
     const g = new IG.Game({ players: players });
     N.start(g.toState(), players.length); // lo stato torna a tutti via 'started'
   }
@@ -277,6 +319,26 @@
     if (game.winner != null) showWin();
     else if (!isMyTurn()) toast("Turno di " + game.player(game.currentPlayer).name);
     else toast("È il tuo turno!");
+    if (window.IGNet && window.IGNet.isHost) autosave(); // l'host salva lo stato condiviso
+    driveOnlineBots(); // se tocca a un bot e sono l'host, lo eseguo io
+  }
+  // L'host esegue i turni dei bot IA (auto-risolvendo i combattimenti) e sincronizza
+  function driveOnlineBots() {
+    if (!onlineMode || !window.IGNet || !window.IGNet.isHost || botRunning) return;
+    if (!game || game.winner != null) return;
+    const p = game.player(game.currentPlayer);
+    if (!p || !p.isAI) return;
+    botRunning = true;
+    aiOverlay(true, aiName(p), p.color);
+    setTimeout(() => {
+      try { IG.runAITurn(game); } catch (e) { console.error(e); toast("Errore bot: " + e.message); }
+      botRunning = false;
+      aiOverlay(false);
+      render();
+      syncNet(); // invia lo stato risultante agli altri
+      if (game.winner != null) { showWin(); return; }
+      setTimeout(driveOnlineBots, 300); // eventuale bot successivo
+    }, 1000);
   }
   // Riproduce sul tabellone le frecce degli spostamenti altrui (online)
   function showRemoteMoves(moves) {
@@ -410,8 +472,8 @@
   // Ogni 4-10 secondi una cometa attraversa un tratto casuale del tabellone.
   let shootingTimer = null;
   function startShootingStars() {
-    if (shootingTimer) return;
-    const schedule = () => { shootingTimer = setTimeout(() => { spawnShootingStar(); schedule(); }, 4000 + Math.random() * 6000); };
+    if (shootingTimer || !animEnabled) return;
+    const schedule = () => { shootingTimer = setTimeout(() => { if (animEnabled) spawnShootingStar(); shootingTimer = null; schedule(); }, 4000 + Math.random() * 6000); };
     schedule();
   }
   function spawnShootingStar() {
@@ -475,7 +537,11 @@
   }
   function renderPlanetHand() {
     let hand = $("planetHand");
-    if (!hand) { hand = htmlEl("div"); hand.id = "planetHand"; document.body.appendChild(hand); }
+    if (!hand) {
+      hand = htmlEl("div"); hand.id = "planetHand"; document.body.appendChild(hand);
+      // Posizione salvata (trascinabile dall'impugnatura)
+      try { const pos = JSON.parse(localStorage.getItem("ig_handpos") || "null"); if (pos && typeof pos.left === "number") { hand.style.left = pos.left + "px"; hand.style.top = pos.top + "px"; hand.style.bottom = "auto"; hand.style.transform = "none"; } } catch (e) {}
+    }
     hand.innerHTML = "";
     if (!game || $("game").classList.contains("hidden")) return;
     const pid = handOwner();
@@ -484,18 +550,24 @@
     const n = planets.length;
     if (!n) return;
     const pl = game.player(pid);
+    // Impugnatura per lo spostamento (come la chat)
+    const grip = htmlEl("div", "hand-grip"); grip.innerHTML = "⠿ I tuoi pianeti" + (carriAssign ? ' <span class="assign-hint">— scegli dove assegnare i carri</span>' : "");
+    hand.appendChild(grip);
+    makeDraggable(hand, grip, null, "ig_handpos");
+    const fan = htmlEl("div", "hand-fan"); hand.appendChild(fan);
     planets.forEach((cell, i) => {
       const mid = (n - 1) / 2;
-      const card = htmlEl("div", "pcard");
+      const card = htmlEl("div", "pcard" + (carriAssign ? " assignable" : ""));
       card.style.setProperty("--rot", ((i - mid) * 5) + "deg");
       card.style.setProperty("--lift", (Math.abs(i - mid) * 8) + "px");
       card.style.setProperty("--fc", pl.color);
-      // .pcin è la parte visiva che si alza; .pcard resta FERMO come zona
-      // sensibile al mouse → niente flickering quando la carta si solleva
       card.innerHTML = '<div class="pcin">' + pcardHTML(cell) + "</div>";
-      card.onclick = () => { sel.cellKey = Hex.key(cell.q, cell.r); sel.fleetId = null; flyToCell(cell.q, cell.r); render(); };
+      card.onclick = () => {
+        if (carriAssign) { tryAssignCarri(cell.q, cell.r); return; }
+        sel.cellKey = Hex.key(cell.q, cell.r); sel.fleetId = null; flyToCell(cell.q, cell.r); render();
+      };
       card.onmouseenter = () => pulseCell(cell.q, cell.r); // evidenzia il pianeta sul tabellone
-      hand.appendChild(card);
+      fan.appendChild(card);
     });
   }
   // Illustrazione CSS del pianeta (sfera con superficie in rotazione)
@@ -519,16 +591,22 @@
   }
 
   const PHASE_LABELS = ["Riscossione", "Produzione", "Movimento", "Costruzione"];
+  const PHASE_ICONS = ["💰", "🏭", "🚀", "🏗️"];
+  const PHASE_KEYS = ["riscossione", "produzione", "movimento", "costruzione"];
   function renderTop() {
     const p = game.player(game.currentPlayer);
+    // Tinta generale dell'HUD in base al giocatore di turno
+    document.documentElement.style.setProperty("--turn", p.color);
+    document.documentElement.style.setProperty("--turn-soft", p.color + "33");
     $("turnInfo").innerHTML =
       '<span class="turn-num">Turno ' + game.turnNumber + '</span>' +
-      '<span class="active-faction" style="--fc:' + p.color + '"><span class="fdot"></span>' + esc(p.name) + (p.isAI ? ' <span class="ai-pill">IA</span>' : '') + '</span>';
-    // Stepper delle fasi
+      '<span class="active-faction" style="--fc:' + p.color + '"><span class="fdot"></span>' + esc(p.name) + (p.isAI ? ' <span class="ai-pill">IA</span>' : '') + '</span>' +
+      '<span class="game-clock" id="gameClock">🕒 ' + fmtTime(game.playSeconds) + '</span>';
+    // Stepper delle fasi (ognuna con icona e colore proprio)
     let steps = '<div class="stepper">';
     for (let i = 0; i < PHASE_LABELS.length; i++) {
       const st = i < game.phaseIdx ? "done" : i === game.phaseIdx ? "active" : "todo";
-      steps += '<div class="step ' + st + '"><span class="step-n">' + (i + 1) + '</span><span class="step-label">' + PHASE_LABELS[i] + '</span></div>';
+      steps += '<div class="step ph-' + PHASE_KEYS[i] + " " + st + '"><span class="step-ic">' + PHASE_ICONS[i] + '</span><span class="step-label">' + PHASE_LABELS[i] + '</span></div>';
       if (i < PHASE_LABELS.length - 1) steps += '<span class="step-sep"></span>';
     }
     steps += '</div>';
@@ -537,6 +615,8 @@
     $("advanceBtn").textContent = game.phaseIdx >= IG.PHASES.length - 1 ? "Fine turno ▸" : "Avanza fase ▸";
     if (onlineMode && !isMyTurn() && game.winner == null) $("phaseInfo").innerHTML = '<span class="waiting">⏳ Turno di ' + esc(game.player(game.currentPlayer).name) + '…</span>';
   }
+  function updateClock() { const el = $("gameClock"); if (el && game) el.textContent = "🕒 " + fmtTime(game.playSeconds); }
+  const BUILD_ICONS = { fabbricaNavale: "🚀", fabbricaCarri: "🏭", tesoreria: "🏛", cannone: "🛰", torretta: "🗼" };
 
   function renderPlayerPanel() {
     const p = game.player(game.currentPlayer);
@@ -568,21 +648,26 @@
     return '<svg width="22" height="22" viewBox="0 0 22 22"><g transform="translate(11 11)"><path d="' + shipHullPath(type) + '" fill="#dfe8f7" stroke="#7c8bb3" stroke-width="0.7"/></g></svg>';
   }
 
-  const COLOR_NAMES = CFG.COLOR_NAMES || ["Rosso", "Blu", "Verde", "Giallo"];
+  function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
   function renderLog() {
     const box = $("logBody"); box.innerHTML = "";
+    // Nomi dei giocatori ordinati per lunghezza decrescente (evita match parziali)
+    const players = (game.players || []).slice().sort((a, b) => b.name.length - a.name.length);
     for (const line of game.log.slice(-140)) {
       // Divisori di turno
       if (/^—\s*Inizia il turno/.test(line)) { box.appendChild(htmlEl("div", "log-turn", line.replace(/—/g, "").trim())); continue; }
       // Righe di dettaglio (indentate o con simboli di round)
       const sub = /^\s{2,}|^\s*[▶◀]/.test(line);
-      // A quale fazione si riferisce la riga? (prima occorrenza di un nome-colore)
-      let idx = -1, pos = Infinity;
-      COLOR_NAMES.forEach((cn, i) => { const p = line.indexOf(cn); if (p >= 0 && p < pos) { pos = p; idx = i; } });
-      const div = htmlEl("div", "log-entry" + (sub ? " sub" : "") + (idx < 0 ? " neutral" : ""));
-      if (idx >= 0) div.style.borderLeftColor = CFG.COLORS[idx];
+      // A quale giocatore si riferisce la riga? (prima occorrenza di un nome)
+      let who = null, pos = Infinity;
+      for (const pl of players) { const p = line.indexOf(pl.name); if (p >= 0 && p < pos) { pos = p; who = pl; } }
+      const div = htmlEl("div", "log-entry" + (sub ? " sub" : "") + (who ? "" : " neutral"));
+      if (who) div.style.borderLeftColor = who.color;
       let html = esc(line);
-      COLOR_NAMES.forEach((cn, i) => { html = html.replace(new RegExp("\\b" + cn + "\\b", "g"), '<b class="lg-fac" style="color:' + CFG.COLORS[i] + '">' + cn + "</b>"); });
+      for (const pl of players) {
+        html = html.replace(new RegExp("(^|[^\\w])(" + escapeRe(esc(pl.name)) + ")(?=[^\\w]|$)", "g"),
+          '$1<b class="lg-fac" style="color:' + pl.color + '">$2</b>');
+      }
       div.innerHTML = html;
       box.appendChild(div);
     }
@@ -1077,10 +1162,25 @@
     else unpinPlanetCard();
   }
 
+  // Completa l'assegnazione dei carri comprati al mercato sul pianeta cliccato
+  function tryAssignCarri(q, r) {
+    const cell = game.cell(q, r);
+    if (!cell || cell.type !== "planet" || cell.owner !== game.currentPlayer) { toast("Scegli un TUO pianeta."); return false; }
+    if (cell.garrison + carriAssign.card.qta > CFG.MAX_CARRI_PIANETA) { toast("Il pianeta non ha spazio (max " + CFG.MAX_CARRI_PIANETA + " carri)."); return false; }
+    const r2 = game.marketBuy(carriAssign.fleetId, carriAssign.card, { q: q, r: r });
+    if (!r2.ok) { toast("❌ " + (r2.msg || "Assegnazione non riuscita.")); return false; }
+    if (marketCardCache[carriAssign.fleetId]) marketCardCache[carriAssign.fleetId].bought = true;
+    flashBanner("bonus", "🛒 Mercato", "🪖", "Assegnati " + carriAssign.card.qta + "× Carri", "a " + cell.planet.data.nome);
+    carriAssign = null;
+    render(); syncNet();
+    return true;
+  }
+
   // ---------------------------------------------------------------- INTERAZIONE
   function onCellClick(q, r) {
     if (game.winner) return;
     if (justPanned) return; // era un trascinamento della vista, non un clic sulla cella
+    if (carriAssign) { tryAssignCarri(q, r); return; } // modalità assegnazione carri
     const p = game.player(game.currentPlayer);
     const key = Hex.key(q, r);
 
@@ -1243,12 +1343,23 @@
       body.appendChild(htmlEl("div", "info-line", "Cella (" + q + "," + r + "): " + game._tileLabel(cell.type)));
       if (cell.type === "planet") {
         const d = cell.planet.data;
-        body.appendChild(htmlEl("div", "info-line", "Pianeta " + d.nome + " — " + d.tipo + " | Prod ×" + d.produttivita + " | Eco ×" + d.economia));
-        body.appendChild(htmlEl("div", "info-line", "Materie/turno: C×" + d.moltMaterie.carburante + " M×" + d.moltMaterie.metallo + " P×" + d.moltMaterie.pietra + " | $" + (CFG.SOLDI_BASE_PIANETA * d.economia)));
+        const income = game.planetIncome(cell);
+        body.appendChild(htmlEl("div", "info-line", "Pianeta " + d.nome + " — " + d.tipo + " | ⚙️ Prod ×" + d.produttivita + " | 💰 Eco ×" + d.economia));
+        const incLine = htmlEl("div", "info-line");
+        incLine.innerHTML = "Materie/turno: ⛽×" + d.moltMaterie.carburante + " 🔩×" + d.moltMaterie.metallo + " 🪨×" + d.moltMaterie.pietra +
+          " | 💵 <b>" + income.toLocaleString() + "</b>/turno" + (cell.buildings.tesoreria ? ' <span class="muted">(+' + (cell.buildings.tesoreria * CFG.TESORERIA_BONUS).toLocaleString() + " tesorerie)</span>" : "");
+        body.appendChild(incLine);
         if (cell.owner != null) {
-          body.appendChild(htmlEl("div", "info-line", "Proprietario: " + game.player(cell.owner).name + " | Guarnigione: " + cell.garrison + " carri"));
           const b = cell.buildings;
-          body.appendChild(htmlEl("div", "info-line", "Edifici: Fab.Navale " + b.fabbricaNavale + ", Fab.Carri " + b.fabbricaCarri + ", Tesor. " + b.tesoreria + ", Cannone " + b.cannone + ", Torretta " + b.torretta + " (slot " + Object.values(b).reduce((a, c) => a + c, 0) + "/9)"));
+          body.appendChild(htmlEl("div", "info-line", "Proprietario: " + game.player(cell.owner).name));
+          const slots = Object.values(b).reduce((a, c) => a + c, 0);
+          const bLine = htmlEl("div", "info-line");
+          const bParts = Object.keys(BUILD_ICONS).filter((k) => b[k] > 0).map((k) => BUILD_ICONS[k] + b[k]);
+          bLine.innerHTML = "🏗 Edifici (" + slots + "/9): " + (bParts.length ? bParts.join("  ") : '<span class="muted">nessuno</span>');
+          body.appendChild(bLine);
+          const dLine = htmlEl("div", "info-line");
+          dLine.innerHTML = "🛡 Difese: 🪖 " + cell.garrison + " carri" + (b.cannone ? "  🛰 " + b.cannone : "") + (b.torretta ? "  🗼 " + b.torretta : "");
+          body.appendChild(dLine);
         } else body.appendChild(htmlEl("div", "info-line", "Pianeta libero — colonizzabile con una Nave Colonia."));
       }
     } else {
@@ -1292,10 +1403,12 @@
         const slotsUsed = Object.values(cell.buildings).reduce((a, c2) => a + c2, 0);
         for (const t in CFG.BUILDINGS) {
           const B = CFG.BUILDINGS[t];
-          const b = htmlEl("button", "small", B.nome + " (" + (B.ndri / 1000) + "k+" + B.pietra + "P)");
+          const b = htmlEl("button", "small build-btn");
+          b.innerHTML = '<span class="bb-ic">' + (BUILD_ICONS[t] || "🏗") + '</span> ' + esc(B.nome) +
+            ' <span class="bb-cost">💰' + (B.ndri / 1000) + "k · 🪨" + B.pietra + "</span>";
           // non permettibile → grigio e non cliccabile
           b.disabled = p.money < B.ndri || p.res.pietra < B.pietra || slotsUsed >= 9;
-          b.onclick = () => { const r2 = game.buildBuilding(q, r, t); if (r2.ok) flashBanner("discovery", "🏗️ Costruzione", "🏗️", B.nome, "su " + cell.planet.data.nome); act(r2); };
+          b.onclick = () => { const r2 = game.buildBuilding(q, r, t); if (r2.ok) flashBanner("discovery", "🏗️ Costruzione", BUILD_ICONS[t] || "🏗️", B.nome, "su " + cell.planet.data.nome); act(r2); };
           grid.appendChild(b);
         }
         body.appendChild(grid);
@@ -1489,13 +1602,14 @@
     }
     combatCtx.net = !!opts.net;
     combatCtx.cid = opts.cid || null;
-    combatCtx.enemyQueue = [];      // tiri di dado dell'avversario ricevuti dalla rete
-    combatCtx.sentRoundKey = null;  // per inviare i miei dadi una sola volta a round
+    combatCtx.enemyByKey = {};      // key round -> dadi avversario (anche parziali, con null)
+    combatCtx.sentSig = "";         // firma dell'ultimo invio (evita duplicati, permette invii parziali)
     combatCtx.bfOwners = { A: combatCtx.att.owner, B: combatCtx.def ? combatCtx.def.owner : combatCtx.cell.owner };
     initBattlefield(combatCtx);
     combatCtx.session.startRound();
     renderCombat();
   }
+  function roundKey(ctx) { return ctx.phase + ":" + ctx.session.roundIndex; }
 
   // L'attaccante avvia il combattimento. Online, se il difensore è un altro
   // giocatore umano, i dadi di DIFESA li lancia lui: si usa il combattimento in rete.
@@ -1512,36 +1626,57 @@
     }
   }
 
+  // Coda dei combattimenti in arrivo mentre uno è già in corso (doppio combattimento)
+  let pendingCombatStarts = [];
   // Ricezione dei messaggi di combattimento online
   function onNetCombat(m) {
     if (m.sub === "start") {
       if (m.defenderSeat !== myPlayerId) return; // non tocca a me difendere
-      if (combatCtx) return; // già in un combattimento
-      toast("⚠ Sei sotto attacco — lancia i dadi di difesa!");
-      Snd.turnStart();
-      startInteractiveCombat(m.kind, { attacker: m.attacker, defender: m.defender, q: m.q, r: m.r, land: m.land }, { mySide: "B", net: true, cid: m.cid });
+      if (combatCtx) { pendingCombatStarts.push(m); return; } // in corso: accoda (niente scontri persi)
+      startDefenseCombat(m);
     } else if (m.sub === "roll") {
-      if (combatCtx && combatCtx.net && combatCtx.cid === m.cid) { combatCtx.enemyQueue.push(m.dice || []); tryApplyEnemyRoll(); }
+      if (combatCtx && combatCtx.net && combatCtx.cid === m.cid) {
+        combatCtx.enemyByKey[m.key] = m.dice || [];
+        applyEnemyForCurrentRound();
+      } else {
+        // Roll arrivato per un combattimento non ancora aperto: bufferizza sull'eventuale start in coda
+        for (const s of pendingCombatStarts) if (s.cid === m.cid) { (s._rolls = s._rolls || []).push(m); }
+      }
     }
   }
-  // Invia i miei dadi del round corrente (una sola volta per round)
+  function startDefenseCombat(m) {
+    toast("⚠ Sei sotto attacco — lancia i dadi di difesa!");
+    Snd.turnStart();
+    startInteractiveCombat(m.kind, { attacker: m.attacker, defender: m.defender, q: m.q, r: m.r, land: m.land }, { mySide: "B", net: true, cid: m.cid });
+    // Riapplica eventuali tiri già ricevuti prima dell'apertura
+    if (m._rolls) for (const rm of m._rolls) { combatCtx.enemyByKey[rm.key] = rm.dice || []; }
+    applyEnemyForCurrentRound();
+  }
+  function processPendingCombat() {
+    if (combatCtx || !pendingCombatStarts.length) return;
+    startDefenseCombat(pendingCombatStarts.shift());
+  }
+  // Invia lo stato ATTUALE dei miei dadi del round (anche parziale → l'avversario
+  // li vede comparire uno alla volta). Idempotente tramite firma.
   function sendMyRoll(list) {
     const ctx = combatCtx; if (!ctx || !ctx.net) return;
-    const key = ctx.phase + ":" + ctx.session.roundIndex;
-    if (ctx.sentRoundKey === key) return;
-    ctx.sentRoundKey = key;
-    window.IGNet.sendCombat({ sub: "roll", cid: ctx.cid, dice: list.map((d) => d.die) });
+    const key = roundKey(ctx);
+    const dice = list.map((d) => d.die);
+    const sig = key + "|" + dice.join(",");
+    if (ctx.sentSig === sig) return;
+    ctx.sentSig = sig;
+    window.IGNet.sendCombat({ sub: "roll", cid: ctx.cid, key: key, dice: dice });
   }
-  // Applica i dadi dell'avversario in coda al round corrente
-  function tryApplyEnemyRoll() {
-    const ctx = combatCtx; if (!ctx || !ctx.net || !ctx.enemyQueue.length || !ctx.session.round) return;
+  // Applica (anche parzialmente) i dadi dell'avversario al round corrente
+  function applyEnemyForCurrentRound() {
+    const ctx = combatCtx; if (!ctx || !ctx.net || !ctx.session.round) return;
+    const arr = ctx.enemyByKey[roundKey(ctx)]; if (!arr) return;
     const r = ctx.session.round;
     const iAmAggressor = (r.aggressorIsA === (ctx.mySide === "A"));
     const enemy = iAmAggressor ? r.def : r.att;
-    if (enemy.every((d) => d.die != null)) return; // già riempito
-    const dice = ctx.enemyQueue.shift();
-    for (let i = 0; i < enemy.length; i++) enemy[i].die = dice[i];
-    renderCombat();
+    let changed = false;
+    for (let i = 0; i < enemy.length; i++) { if (enemy[i].die == null && arr[i] != null) { enemy[i].die = arr[i]; changed = true; } }
+    if (changed) renderCombat();
   }
 
   // ===================== CAMPO DI BATTAGLIA VISIVO =====================
@@ -1707,6 +1842,8 @@
     // bersagli: le unità distrutte; se nessuna, un difensore a caso (colpo parato)
     const targets = dead.length ? dead : (defUnits.length ? [defUnits[Math.floor(Math.random() * defUnits.length)]] : []);
     if (!targets.length || !shooters.length) { done(); return; }
+    // Ritmo più lento se le animazioni sono attive (battaglie leggibili)
+    const hit = animEnabled ? 420 : 120, step = animEnabled ? 640 : 200, tail = animEnabled ? 1200 : 350;
     let delay = 0;
     targets.forEach((t, ti) => {
       const shooter = shooters[ti % shooters.length];
@@ -1719,11 +1856,11 @@
         setTimeout(() => {
           if (dead.length) { explodeAt(svg, to, defSide + "-" + t._slot); Snd.boom(); if (ti === 0) shakeModal(); }
           else shieldAt(svg, to);
-        }, 170);
+        }, hit);
       }, delay);
-      delay += 280;
+      delay += step;
     });
-    setTimeout(done, delay + 750);
+    setTimeout(done, delay + tail);
   }
 
   function caCol(name, color, comp) {
@@ -1764,18 +1901,18 @@
 
     // --- Combattimento in rete: ognuno lancia SOLO i propri dadi ---
     if (ctx.net) {
-      // Appena i miei dadi sono completi li invio SEMPRE, anche se quelli
-      // dell'avversario sono già arrivati (altrimenti lui resta in attesa).
-      if (yoursDone) sendMyRoll(yours);
+      // Invio SEMPRE lo stato attuale dei miei dadi (anche parziale): l'avversario
+      // li vede comparire uno alla volta man mano che li lancio.
+      sendMyRoll(yours);
+      applyEnemyForCurrentRound(); // eventuali dadi avversario già arrivati
       if (!yoursDone) {
         acts.appendChild(htmlEl("div", "ca-hint", "👆 Clicca i tuoi dadi (o lanciali tutti)"));
         const all = htmlEl("button", "primary", "Lancia i miei dadi 🎲"); all.onclick = () => { s.rollAll(yours); Snd.dice(); renderCombat(); }; acts.appendChild(all);
       } else if (!enemyDone) {
         acts.appendChild(htmlEl("div", "ca-hint", "⏳ In attesa dei dadi dell'avversario…"));
-        tryApplyEnemyRoll();               // se sono già arrivati, applicali
       } else {
-        acts.appendChild(htmlEl("div", "ca-hint", "Risoluzione del round…"));
-        setTimeout(() => { if (combatCtx === ctx && !ctx._resolving) { ctx._resolving = true; resolveRoundWithFX(); } }, 550);
+        acts.appendChild(htmlEl("div", "ca-hint", "⚔ Risoluzione del round…"));
+        setTimeout(() => { if (combatCtx === ctx && !ctx._resolving) { ctx._resolving = true; resolveRoundWithFX(); } }, animEnabled ? 900 : 300);
       }
       return;
     }
@@ -1802,7 +1939,7 @@
       const face = htmlEl("span", "die-face"); face.textContent = slot.die != null ? DIE_GLYPH[slot.die] : "🎲"; d.appendChild(face);
       if (slot.mult > 1) { const m = htmlEl("span", "die-mult"); m.textContent = "×" + slot.mult; d.appendChild(m); }
       if (slot.die == null && clickable) {
-        d.onclick = () => { combatCtx.session.rollSlot(slot); Snd.dice(); tumbleSingle(face, slot.die, () => renderCombat()); };
+        d.onclick = () => { combatCtx.session.rollSlot(slot); Snd.dice(); if (combatCtx.net) sendMyRoll(list); tumbleSingle(face, slot.die, () => renderCombat()); };
       }
       wrap.appendChild(d);
     }
@@ -1899,6 +2036,7 @@
       if (game.winner != null) { showWin(); return; }
       if (onDone) { onDone(); return; }  // riprende il turno dell'IA dopo la difesa
       if (!(net && mySide === "B")) syncNet(); // online: l'attaccante sincronizza l'esito (il difensore no)
+      processPendingCombat(); // eventuale secondo combattimento in coda (doppio combattimento)
     };
     acts.appendChild(ok);
     combatCtx = null;
@@ -2000,21 +2138,24 @@
     const f = game.fleetById(fleetId); if (!f) return;
     const body = htmlEl("div");
     body.appendChild(htmlEl("p", null, "Quante unità spostare in una nuova flotta?"));
-    const inputs = {};
-    for (const t of ["caccia", "torpediniera", "colonia"]) {
+    const sels = {};
+    function dropdown(label, max) {
       const row = htmlEl("div", "field-row");
-      row.appendChild(htmlEl("span", null, CFG.SHIP_NAMES[t] + " (max " + f.ships[t] + ")"));
-      const i = htmlEl("input"); i.type = "number"; i.value = 0; i.min = 0; i.max = f.ships[t]; inputs[t] = i; row.appendChild(i);
-      body.appendChild(row);
+      row.appendChild(htmlEl("span", null, label + " (hai " + max + ")"));
+      const sel = htmlEl("select", "split-sel");
+      for (let v = 0; v <= max; v++) { const o = htmlEl("option"); o.value = v; o.textContent = v; sel.appendChild(o); }
+      sel.disabled = max <= 0;
+      row.appendChild(sel); body.appendChild(row);
+      return sel;
     }
-    const rowc = htmlEl("div", "field-row");
-    rowc.appendChild(htmlEl("span", null, "Carri (max " + f.carri + ")"));
-    const ci = htmlEl("input"); ci.type = "number"; ci.value = 0; ci.min = 0; ci.max = f.carri; rowc.appendChild(ci);
-    body.appendChild(rowc);
+    for (const t of ["caccia", "torpediniera", "colonia"]) sels[t] = dropdown(CFG.SHIP_NAMES[t], f.ships[t]);
+    sels.carri = dropdown("Carri", f.carri);
     modal("Dividi flotta #" + f.id, body, [
       { label: "Dividi", primary: true, onClick: () => {
-          const take = { caccia: +inputs.caccia.value, torpediniera: +inputs.torpediniera.value, colonia: +inputs.colonia.value, carri: +ci.value };
-          game.splitFleet(fleetId, take); closeModal(); render();
+          const take = { caccia: +sels.caccia.value, torpediniera: +sels.torpediniera.value, colonia: +sels.colonia.value, carri: +sels.carri.value };
+          if (!take.caccia && !take.torpediniera && !take.colonia && !take.carri) { toast("Seleziona almeno un'unità."); return; }
+          const r = game.splitFleet(fleetId, take); if (r && r.ok === false) { toast(r.msg || "Divisione non valida."); return; }
+          closeModal(); render(); syncNet();
         } },
       { label: "Annulla", onClick: closeModal },
     ]);
@@ -2063,12 +2204,13 @@
         toast("❌ " + r.msg);
       }
       function chooseCarriPlanet() {
-        const planets = game.planetsWithGarrisonRoom(f.owner, card.qta);
-        const b = htmlEl("div");
-        b.appendChild(htmlEl("p", "muted center", "Le navi non hanno capienza per " + card.qta + " carri. Assegnali a un tuo pianeta (max " + CFG.MAX_CARRI_PIANETA + " per pianeta):"));
-        const acts = planets.map((cell) => ({ label: "🪐 " + cell.planet.data.nome + " (" + cell.garrison + "/" + CFG.MAX_CARRI_PIANETA + ")", onClick: () => tryBuyCard({ q: cell.q, r: cell.r }) }));
-        acts.push({ label: "Annulla", onClick: () => refresh() });
-        modal("🪖 Assegna i carri a un pianeta", b, acts);
+        // Modalità "assegna cliccando": si chiude il mercato e si clicca il pianeta
+        // sul tabellone (o la sua carta in mano) tra quelli con spazio in guarnigione.
+        carriAssign = { fleetId: fleetId, card: card };
+        closeModal();
+        render();
+        toast("🪖 Clicca un tuo pianeta (o la sua carta) per assegnare " + card.qta + " carri.");
+        flashBanner("discovery", "🪖 Assegna carri", "🪖", "Scegli il pianeta di destinazione", "Clicca un pianeta con spazio (max " + CFG.MAX_CARRI_PIANETA + ")");
       }
 
       const actions = [];
@@ -2109,17 +2251,41 @@
     refresh();
   }
 
+  // Dado a pallini disegnato in SVG (identico su qualsiasi schermo/font)
+  const PIP_POS = { TL: [16, 16], TR: [44, 16], ML: [16, 30], MR: [44, 30], C: [30, 30], BL: [16, 44], BR: [44, 44] };
+  const PIP_MAP = { 1: ["C"], 2: ["TL", "BR"], 3: ["TL", "C", "BR"], 4: ["TL", "TR", "BL", "BR"], 5: ["TL", "TR", "C", "BL", "BR"], 6: ["TL", "TR", "ML", "MR", "BL", "BR"] };
+  function pipDie(val) {
+    const svg = svgEl("svg", { viewBox: "0 0 60 60", class: "pip-die" });
+    svg.appendChild(svgEl("rect", { x: 2, y: 2, width: 56, height: 56, rx: 11, fill: "url(#pd-grad)", stroke: "#cfd8ef", "stroke-width": 1.5 }));
+    const pg = svgEl("g", { class: "pips" });
+    svg.appendChild(pg);
+    svg._setVal = (v) => { pg.innerHTML = ""; for (const k of (PIP_MAP[v] || [])) { const p = PIP_POS[k]; pg.appendChild(svgEl("circle", { cx: p[0], cy: p[1], r: 5.2, fill: "#1a2036" })); } };
+    svg._setVal(val);
+    return svg;
+  }
+  function tumblePips(dice, finals, done) {
+    let t = 0;
+    const iv = setInterval(() => {
+      for (const d of dice) d._setVal(1 + Math.floor(Math.random() * 6));
+      if (++t >= 10) {
+        clearInterval(iv);
+        dice.forEach((d, i) => { d._setVal(finals[i]); d.classList.add("pd-pop"); });
+        if (done) setTimeout(done, 160);
+      }
+    }, animEnabled ? 70 : 30);
+  }
   // Mostra i due dadi del Casinò che rotolano, poi rivela l'esito
   function showCasinoRoll(pid, roll, refresh) {
     const body = htmlEl("div");
+    body.innerHTML = '<svg width="0" height="0"><defs><linearGradient id="pd-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fdfefe"/><stop offset="100%" stop-color="#d3ddf0"/></linearGradient></defs></svg>';
     const dz = htmlEl("div", "dice-line big");
-    dz.appendChild(dieEl(roll.d1, "casino"));
-    dz.appendChild(dieEl(roll.d2, "casino"));
+    const d1 = pipDie(1), d2 = pipDie(1);
+    dz.appendChild(d1); dz.appendChild(d2);
     body.appendChild(dz);
     const outBox = htmlEl("div", "casino-outcome"); body.appendChild(outBox);
     modal("🎲 Casinò — lancio dei dadi", body, []);
     const acts = $("modalActions"); acts.style.visibility = "hidden";
-    tumbleDice(body, () => {
+    tumblePips([d1, d2], [roll.d1, roll.d2], () => {
       acts.style.visibility = "";
       let msg, cls;
       if (roll.outcome === "win") { msg = "🎉 " + roll.d1 + " + " + roll.d2 + " = " + roll.sum + " — VINCI! Il banco si raddoppia."; cls = "win"; }
@@ -2145,41 +2311,70 @@
     modal("Fine partita", body, [{ label: "Nuova partita", primary: true, onClick: () => location.reload() }]);
   }
 
-  // Lancio dei dadi d'inizio: chi ottiene il numero più basso comincia (e sceglie il senso).
+  // Lancio dei dadi d'inizio: OGNI giocatore lancia il proprio dado (clic), poi
+  // chi ottiene il numero più basso comincia (e sceglie il senso).
   function showStartDice(onDone) {
     const rolls = game.orderRolls || [];
     if (!rolls.length) { onDone(); return; }
     const starterId = game.startPlayer != null ? game.startPlayer : (game.turnOrder ? game.turnOrder[0] : rolls[0].id);
     const body = htmlEl("div", "startdice");
-    body.appendChild(htmlEl("p", "muted center", "Ogni fazione lancia un dado: chi ottiene il numero più basso inizia."));
+    body.appendChild(htmlEl("p", "muted center", "Ogni fazione lancia il proprio dado: chi ottiene il numero più basso inizia. Clicca il tuo dado!"));
     const grid = htmlEl("div", "sd-grid");
     const items = rolls.map((r) => {
       const cell = htmlEl("div", "sd-player");
       const nm = htmlEl("div", "sd-name"); nm.innerHTML = '<span class="dot" style="background:' + r.color + '"></span>' + esc(r.name); cell.appendChild(nm);
-      const d = dieEl(r.roll, "casino"); cell.appendChild(d);
+      const mine = !onlineMode || r.id === myPlayerId;
+      const dieWrap = htmlEl("div", "sd-die" + (mine ? " rollable" : ""));
+      dieWrap.innerHTML = '<span class="sd-q">🎲</span>';
+      cell.appendChild(dieWrap);
       grid.appendChild(cell);
-      return { cell, id: r.id };
+      return { cell, dieWrap, id: r.id, roll: r.roll, rolled: false, mine: mine };
     });
     body.appendChild(grid);
     const result = htmlEl("div", "sd-result"); body.appendChild(result);
     modalWide("🎲 Chi inizia la partita?", body);
-    $("modalActions").innerHTML = "";
-    tumbleDice(body, () => {
+    const acts = $("modalActions"); acts.innerHTML = "";
+
+    function rollOne(it, cb) {
+      if (it.rolled) { if (cb) cb(); return; }
+      it.rolled = true; it.dieWrap.classList.remove("rollable");
+      Snd.dice();
+      let t = 0; const face = it.dieWrap.querySelector(".sd-q");
+      const iv = setInterval(() => {
+        face.textContent = DIE_GLYPH[1 + Math.floor(Math.random() * 6)];
+        if (++t >= 8) { clearInterval(iv); it.dieWrap.innerHTML = ""; it.dieWrap.appendChild(dieEl(it.roll, "casino")); it.dieWrap.classList.add("pd-pop"); if (cb) setTimeout(cb, 150); }
+      }, animEnabled ? 60 : 25);
+    }
+    function allRolled() { return items.every((it) => it.rolled); }
+    function autoRollRest() { // gli altri (IA / avversari online) lanciano da soli, a cascata
+      const next = items.find((it) => !it.rolled);
+      if (!next) { finish(); return; }
+      setTimeout(() => rollOne(next, autoRollRest), 420);
+    }
+    function checkDone() { if (allRolled()) finish(); }
+
+    // Clic sul proprio dado
+    items.forEach((it) => { if (it.mine) it.dieWrap.onclick = () => rollOne(it, checkDone); });
+    // Pulsante per lanciare i dadi rimanenti in un colpo
+    const rollBtn = htmlEl("button", "primary", "🎲 Lancia i dadi");
+    rollBtn.onclick = () => { rollBtn.disabled = true; const mine = items.filter((it) => it.mine && !it.rolled); if (mine.length) { let k = 0; (function seq() { if (k >= mine.length) { autoRollRest(); return; } rollOne(mine[k++], seq); })(); } else autoRollRest(); };
+    acts.appendChild(rollBtn);
+
+    function finish() {
       items.forEach((it) => { if (it.id === starterId) it.cell.classList.add("starter"); });
       const starter = game.player(starterId);
       result.innerHTML = '🏁 Inizia <b style="color:' + starter.color + '">' + esc(starter.name) + "</b>";
-      const acts = $("modalActions"); acts.innerHTML = "";
+      const a = $("modalActions"); a.innerHTML = "";
       const iAmStarter = !starter.isAI && (!onlineMode || starterId === myPlayerId);
       if (!onlineMode && iAmStarter) {
-        // Il primo giocatore sceglie il senso di gioco
-        result.innerHTML += '<div class="sd-dir">Scegli il senso di gioco (2+ giocatori):</div>';
+        result.innerHTML += '<div class="sd-dir">Scegli il senso di gioco:</div>';
         const cw = htmlEl("button", "primary", "↻ Orario"); cw.onclick = () => { game.setDirection(1); closeModalWide(); onDone(); };
         const ccw = htmlEl("button", null, "↺ Antiorario"); ccw.onclick = () => { game.setDirection(-1); closeModalWide(); onDone(); };
-        acts.appendChild(cw); acts.appendChild(ccw);
+        a.appendChild(cw); a.appendChild(ccw);
       } else {
-        const ok = htmlEl("button", "primary", "Comincia ▸"); ok.onclick = () => { closeModalWide(); onDone(); }; acts.appendChild(ok);
+        const ok = htmlEl("button", "primary", "Comincia ▸"); ok.onclick = () => { closeModalWide(); onDone(); }; a.appendChild(ok);
       }
-    });
+    }
   }
 
   // ---------------------------------------------------------------- TURN FLOW
@@ -2212,7 +2407,7 @@
     render();
     if (game.winner != null) { showWin(); return; }
     const p = game.player(game.currentPlayer);
-    if (!onlineMode) maybeTurnSound();
+    if (!onlineMode) { maybeTurnSound(); autosave(); } // salvataggio automatico a ogni turno (SP)
     if (!p.isAI) maybeShowRiscossione(); // per l'IA la riscossione è già nel riepilogo eventi (niente sovrapposizioni)
     if (p.isAI) {
       aiOverlay(true, aiName(p), p.color);
@@ -2308,6 +2503,36 @@
     modal("Regole rapide", body, [{ label: "Chiudi", primary: true, onClick: closeModal }]);
   }
 
+  // ---------------------------------------------------------------- SALVATAGGIO
+  function saveGame(silent) {
+    if (!game) return;
+    const save = { v: 1, ts: Date.now(), online: onlineMode, code: (onlineMode && window.IGNet) ? window.IGNet.code : null, turn: game.turnNumber, state: game.toState() };
+    try { localStorage.setItem("ig_save", JSON.stringify(save)); if (!silent) toast("💾 Partita salvata."); }
+    catch (e) { if (!silent) toast("Salvataggio non riuscito."); }
+  }
+  function loadSaveData() { try { return JSON.parse(localStorage.getItem("ig_save") || "null"); } catch (e) { return null; } }
+  function hasSave() { return !!loadSaveData(); }
+  function autosave() { saveGame(true); }
+  // Riprende una partita salvata su QUESTO dispositivo (hot-seat). Vale per SP e,
+  // come ripiego, per una partita online salvata (prosegui in locale).
+  function resumeLocalSave() {
+    const s = loadSaveData(); if (!s || !s.state) { toast("Nessun salvataggio trovato."); return; }
+    game = IG.Game.fromState(s.state);
+    onlineMode = false; myPlayerId = -1; startDiceShown = true; lastTurnKey = null;
+    $("setup").classList.add("hidden"); $("lobby").classList.add("hidden"); $("game").classList.remove("hidden");
+    sel = { fleetId: null, cellKey: null };
+    Snd.resume(); Snd.startMusic();
+    render(); centerBoard();
+    toast("▶ Partita ripresa (turno " + game.turnNumber + ").");
+    checkTurn();
+  }
+  function updateResumeBtn() {
+    const b = $("resumeBtn"); if (!b) return;
+    const s = loadSaveData();
+    if (s) { b.classList.remove("hidden"); b.textContent = "▶ Riprendi partita (turno " + (s.turn || "?") + (s.online ? ", online" : "") + ")"; }
+    else b.classList.add("hidden");
+  }
+
   // ---------------------------------------------------------------- INIT
   function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
@@ -2323,11 +2548,22 @@
     $("confirmToggle").addEventListener("click", toggleConfirmEvents);
     updateConfirmBtn();
     initOnlineUI();
+    applyAnim();
     // Audio: pulsanti separati musica/effetti + suono ai clic + sblocco al primo gesto
     const musB = $("musicToggle"), sfxB = $("sfxToggle");
     if (musB) musB.addEventListener("click", () => { Snd.toggleMusic(); updateAudioBtns(); });
     if (sfxB) sfxB.addEventListener("click", () => { Snd.toggleSfx(); updateAudioBtns(); });
     updateAudioBtns();
+    // Animazioni on/off (PC lenti)
+    const animB = $("animToggle");
+    if (animB) { updateAnimBtn(); animB.addEventListener("click", () => { animEnabled = !animEnabled; localStorage.setItem("ig_anim", animEnabled ? "1" : "0"); applyAnim(); updateAnimBtn(); if (animEnabled) startShootingStars(); }); }
+    // Salvataggio manuale
+    const saveB = $("saveBtn"); if (saveB) saveB.addEventListener("click", () => saveGame(false));
+    // Ripresa da setup
+    const resumeB = $("resumeBtn"); if (resumeB) resumeB.addEventListener("click", resumeLocalSave);
+    updateResumeBtn();
+    // Orologio di gioco: +1s ogni secondo (solo a partita attiva e visibile)
+    setInterval(() => { if (game && !$("game").classList.contains("hidden") && game.winner == null && !document.hidden) { game.playSeconds = (game.playSeconds || 0) + 1; updateClock(); } }, 1000);
     document.addEventListener("pointerdown", () => Snd.resume(), true);
     document.addEventListener("click", (e) => { if (e.target && e.target.closest && e.target.closest("button")) Snd.click(); }, true);
     // Barra spaziatrice: avanza fase/turno (fuori da campi di testo e finestre)
@@ -2346,4 +2582,5 @@
     if (m) { m.textContent = Snd.musicMuted ? "🎵 Musica: off" : "🎵 Musica"; m.classList.toggle("on", !Snd.musicMuted); }
     if (s) { s.textContent = Snd.sfxMuted ? "🔇 Effetti: off" : "🔊 Effetti"; s.classList.toggle("on", !Snd.sfxMuted); }
   }
+  function updateAnimBtn() { const b = $("animToggle"); if (b) { b.textContent = animEnabled ? "✨ Animazioni" : "✨ Anim: off"; b.classList.toggle("on", animEnabled); } }
 })();
