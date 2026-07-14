@@ -156,7 +156,7 @@
     $("onGen").onclick = () => { $("onCode").value = randomCode(); };
     $("onConnect").onclick = connectOnline;
   }
-  function randomCode() { const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 4; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
+  function randomCode() { const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 6; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
   const DEFAULT_SERVER = "wss://imperium-mp.matteocongedo-vfx.workers.dev"; // server multiplayer già pronto
   function prefillOnline() {
     let saved = localStorage.getItem("ig_server");

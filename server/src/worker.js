@@ -53,8 +53,12 @@ export class Room {
   broadcastRoster() { this.all({ t: "roster", roster: this.roster(), hostSeat: this.hostSeat }); }
 
   onMessage(conn, data) {
+    // Difesa: rifiuta messaggi enormi (abuso di risorse). Lo stato di gioco reale
+    // è di pochi KB; 256KB è un tetto molto generoso.
+    if (typeof data === "string" && data.length > 262144) return;
     let m;
     try { m = JSON.parse(data); } catch (e) { return; }
+    if (!m || typeof m !== "object" || typeof m.t !== "string") return;
 
     if (m.t === "hello") {
       const name = (m.name || "Giocatore").slice(0, 24);
