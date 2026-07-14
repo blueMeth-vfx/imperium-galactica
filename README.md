@@ -129,3 +129,9 @@ Il manuale è una versione **Alpha** con diverse lacune. Le scelte adottate sono
 
 In caso di dubbi su una regola, la fonte di verità resta il manuale: segnalaci eventuali
 correzioni e le adeguiamo.
+
+## Licenza
+
+© 2026 Matteo Congedo — **Tutti i diritti riservati**.
+Software proprietario: non è consentito copiare, modificare, ridistribuire o
+usare a fini commerciali senza permesso scritto. Vedi il file [LICENSE](LICENSE).

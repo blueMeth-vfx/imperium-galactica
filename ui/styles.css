@@ -810,3 +810,6 @@ button.primary:disabled { background: linear-gradient(180deg, #2a3a60, #22304e);
 .tut-dots { display: flex; gap: 7px; justify-content: center; margin-top: 16px; }
 .tut-dot { width: 8px; height: 8px; border-radius: 50%; background: #2a3a63; transition: all .2s; }
 .tut-dot.on { background: var(--gold); box-shadow: 0 0 8px rgba(255,216,107,.6); transform: scale(1.25); }
+
+/* Nota di copyright nel menù iniziale */
+.copyright { text-align: center; font-size: 11px; color: #5a6785; margin: 18px 0 0; letter-spacing: .3px; }
