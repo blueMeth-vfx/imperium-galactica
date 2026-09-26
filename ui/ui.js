@@ -98,7 +98,7 @@
 
   function toast(msg) {
     let t = $("toast");
-    if (!t) { t = htmlEl("div"); t.id = "toast"; t.style.cssText = "position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#22304e;border:1px solid #3f5b94;padding:9px 16px;border-radius:8px;z-index:99;font-size:28px;box-shadow:0 6px 20px rgba(0,0,0,.5)"; document.body.appendChild(t); }
+    if (!t) { t = htmlEl("div"); t.id = "toast"; t.style.cssText = "position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#22304e;border:1px solid #3f5b94;padding:9px 16px;border-radius:8px;z-index:99;font-size:20px;box-shadow:0 6px 20px rgba(0,0,0,.5)"; document.body.appendChild(t); }
     t.textContent = msg; t.style.opacity = "1";
     clearTimeout(t._h); t._h = setTimeout(() => { t.style.opacity = "0"; }, 2200);
   }
@@ -111,7 +111,7 @@
       const row = htmlEl("div", "player-row");
       const sw = htmlEl("span", "swatch"); sw.style.background = CFG.COLORS[i];
       const name = htmlEl("input"); name.type = "text"; name.value = "Giocatore " + (i + 1); name.dataset.idx = i;
-      const aiLabel = htmlEl("label"); aiLabel.style.cssText = "display:flex;align-items:center;gap:4px;margin:0;font-size:26px;white-space:nowrap";
+      const aiLabel = htmlEl("label"); aiLabel.style.cssText = "display:flex;align-items:center;gap:4px;margin:0;font-size:18px;white-space:nowrap";
       const ai = htmlEl("input"); ai.type = "checkbox"; ai.dataset.idx = i; ai.className = "ai-check";
       aiLabel.appendChild(ai); aiLabel.appendChild(document.createTextNode("IA"));
       // Difficoltà (visibile solo se IA)
