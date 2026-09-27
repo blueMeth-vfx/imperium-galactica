@@ -16,3 +16,15 @@ build/
 *.pdb
 csharp/**/bin/
 csharp/**/obj/
+
+# Unity (file generati: non vanno versionati)
+unity/**/[Ll]ibrary/
+unity/**/[Tt]emp/
+unity/**/[Oo]bj/
+unity/**/[Bb]uild/
+unity/**/[Bb]uilds/
+unity/**/[Ll]ogs/
+unity/**/[Uu]serSettings/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/.vs/
