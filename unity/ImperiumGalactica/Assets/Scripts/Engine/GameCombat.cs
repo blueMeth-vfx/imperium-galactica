@@ -56,7 +56,7 @@ namespace ImperiumGalactica.Engine
         private static int Stat(CombatUnit u, bool attack) { return attack ? u.att : u.def; }
 
         // Fino a 3 unità del lato (normali prima; le lastLine entrano a condizione).
-        private List<CombatUnit> PickFront(List<CombatUnit> units, bool attack, bool isGround)
+        internal List<CombatUnit> PickFront(List<CombatUnit> units, bool attack, bool isGround)
         {
             List<CombatUnit> normals = units.Where(u => !u.lastLine).ToList();
             List<CombatUnit> last = units.Where(u => u.lastLine).ToList();
@@ -71,7 +71,7 @@ namespace ImperiumGalactica.Engine
         }
 
         // Rimuove `hits` unità dal difensore (prima normali con difesa più bassa, poi lastLine).
-        private int RemoveKills(List<CombatUnit> units, int hits)
+        internal int RemoveKills(List<CombatUnit> units, int hits)
         {
             int toRemove = hits;
             List<int> order = Enumerable.Range(0, units.Count)

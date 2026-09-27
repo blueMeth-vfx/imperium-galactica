@@ -52,6 +52,9 @@ namespace ImperiumGalactica.Engine
             Setup(playersDef);
         }
 
+        // Costruttore vuoto (non esegue il setup): usato da FromState.
+        private Game() { }
+
         // ---------------------------------------------------------------- utilità
         public void Say(string msg) { log.Add(msg); if (log.Count > 500) log.RemoveAt(0); }
         public int RollDie() { return rng.RollDie(); }

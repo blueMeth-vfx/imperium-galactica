@@ -52,7 +52,23 @@ class Program
         Console.WriteLine("Eventi: " + combats + " combattimenti, " + conquiste + " conquiste, " + colonizzazioni + " colonizzazioni.");
 
         bool ok = explored >= 20 && (colonizzazioni + conquiste) >= 1 && g.turnNumber >= 2;
-        Console.WriteLine(ok ? "SANITY OK: il motore gira e la partita evolve." : "SANITY FALLITO");
-        return ok ? 0 : 1;
+
+        // --- Test salvataggio/caricamento (round-trip dello stato) ---
+        Game g2 = new Game(new List<PlayerDef> { new PlayerDef("A", true), new PlayerDef("B", true) }, 123);
+        for (int i = 0; i < 5; i++) Ai.RunTurn(g2);
+        GameState st = g2.ToState();
+        Game g3 = Game.FromState(st);
+        bool saveOk = g3.turnNumber == g2.turnNumber
+            && g3.currentPlayer == g2.currentPlayer
+            && g3.fleets.Count == g2.fleets.Count
+            && g3.board.Count == g2.board.Count
+            && g3.players.Count == g2.players.Count
+            && g3.board.Values.Count(c => c.explored) == g2.board.Values.Count(c => c.explored);
+        // e la partita ricaricata continua senza crash
+        try { for (int i = 0; i < 3; i++) if (g3.winner == null) Ai.RunTurn(g3); } catch { saveOk = false; }
+        Console.WriteLine("Salva/carica: " + (saveOk ? "OK (stato coerente e partita riprende)" : "FALLITO"));
+
+        Console.WriteLine(ok && saveOk ? "SANITY OK: il motore gira e la partita evolve." : "SANITY FALLITO");
+        return ok && saveOk ? 0 : 1;
     }
 }

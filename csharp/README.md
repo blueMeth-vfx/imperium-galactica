@@ -71,12 +71,12 @@ CSC="C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
    nell'Editor con GameObject/Prefab/Canvas che **leggono lo stato** dal `Game`.
 
 ### Note per la fase Unity
-- **Salvataggio**: le classi dati sono `[Serializable]`. Attenzione: `Game.board`
-  è un `Dictionary` (JsonUtility non serializza i Dictionary): per salvare/caricare
-  conviene una conversione a lista, oppure usare Newtonsoft JSON.
-- **Combattimento interattivo** (giocatore che tira i propri dadi round per round):
-  qui è incluso solo il risolutore automatico (`Battle`, `ResolveFleetCombat`,
-  `ResolvePlanetCombat`). La sessione a passi per la UI si aggiunge in Unity.
+- **Salvataggio**: incluso — `Game.ToState()` produce un `GameState` serializzabile
+  (liste, niente Dictionary/nullable/oggetti null) e `Game.FromState(...)` ricostruisce
+  la partita. In Unity il livello JSON è `SaveSystem` (JsonUtility su `GameState`).
+- **Combattimento interattivo** (dadi round per round): incluso in
+  `GameCombatSession.cs` (`MakeCombatSession`, `CombatSession`, e le `Apply*` per
+  applicare gli esiti). Resta anche il risolutore automatico usato dall'IA.
 - **Multiplayer**: la versione web usa un server Cloudflare; in Unity si rifà con
   il netcode di Unity (o si resta single-player + IA per la prima release Steam).
 

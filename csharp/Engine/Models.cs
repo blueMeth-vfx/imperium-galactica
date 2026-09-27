@@ -155,6 +155,8 @@ namespace ImperiumGalactica.Engine
         public string dest;         // "fleet" | "planet"
         public bool canColonize;
         public string outcome;      // esiti combattimento
+        public bool groundDef;      // ci sono difese di terra (fase spaziale vinta)
+        public int survivors;       // carri sopravvissuti dopo lo sbarco
         public int banco, d1, d2, sum;
 
         public static Result Fail(string m) { return new Result { ok = false, msg = m }; }

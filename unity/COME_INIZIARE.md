@@ -1,51 +1,57 @@
 # Imperium Galactica — Progetto Unity (prototipo)
 
-Progetto Unity già pronto in `unity/ImperiumGalactica`, con dentro il **motore di
-gioco in C#** e un **prototipo giocabile** che parte da solo appena premi Play
-(niente da montare a mano: tutto generato da codice).
+Progetto Unity pronto in `unity/ImperiumGalactica`, con il **motore di gioco in C#**
+e un **prototipo giocabile completo** (solo la grafica è minimale — quella la
+sistemi tu). Parte da solo appena premi Play: niente scene/prefab da montare.
 
-Gli script sono già stati **compilati contro le DLL di Unity 6** (0 errori), quindi
-in Unity compilano.
+Tutti gli script sono stati **compilati contro le DLL vere di Unity 6** (0 errori).
 
 ## 1) Attiva la licenza (una volta sola)
-Serve la tua licenza Unity attiva (gratuita):
 1. Apri **Unity Hub**.
 2. Icona account in alto a destra → **Sign in** (o crea un account gratis).
 3. **⚙ Preferences → Licenses → Add → "Get a free personal license"** (Unity Personal).
 
 ## 2) Apri il progetto
-1. Unity Hub → **Add → Add project from disk** → scegli la cartella
+1. Unity Hub → **Add → Add project from disk** → cartella
    `...\GiocoDaTavolo\unity\ImperiumGalactica`.
 2. Aprilo con **Unity 6000.0.36f1** (se propone 6000.4.2f1 va bene comunque).
-3. La prima apertura importa e compila: **qualche minuto**, è normale.
+3. Prima apertura: importa e compila, **qualche minuto** (normale).
 
-## 3) Gioca
-Premi **▶ Play** in alto. Vedrai il **tabellone esagonale**:
-- In alto: turno, fase, risorse, e i pulsanti (**Avanza fase**, produzione, costruzione).
-- Sei **"Tu"** (giocatore rosso); le altre 3 fazioni sono IA e giocano da sole.
-- **Muovere:** in fase *Movimento* clicca una tua **flotta** (marker colorato), poi
-  clicca una **cella adiacente evidenziata in oro**.
-- **Colonizzare/produrre/costruire:** seleziona un pianeta/flotta e usa i pulsanti in alto.
+## 3) Gioca — premi ▶ Play
+- **Menu iniziale:** scegli numero di giocatori, chi è IA, un seed opzionale →
+  **Inizia partita** (o **Carica partita** se ne hai una salvata).
+- **Tabellone esagonale** con HUD in alto (turno, fase, risorse, pulsanti).
+- **Muovere:** in fase *Movimento* clicca una tua **flotta** (marker colorato),
+  poi una **cella adiacente evidenziata in oro**.
+- **Combattimento interattivo:** attaccando flotta/pianeta si apre la finestra
+  di battaglia → *Tira i dadi* → *Risolvi round*, round per round (spazio +
+  eventuale sbarco a terra coi carri).
+- **Colonizzare / produrre / costruire / mercato / casinò / imbarca-sbarca carri:**
+  seleziona un pianeta o una flotta e usa i pulsanti che compaiono in alto.
+- **Salva / Carica** dalla barra e dal menu; **schermata di vittoria** a fine partita.
 
-## Cos'è (e cosa non è ancora)
-Questo è un **prototipo funzionale** per confermare che il motore gira in Unity e
-per giocare la mappa. Volutamente essenziale:
-- I **combattimenti sono auto-risolti** (niente ancora dadi interattivi/animazioni).
-- Grafica minimale (esagoni colorati + marker), HUD in stile "debug" (IMGUI).
-
-## Prossimi passi (li facciamo insieme)
-- Grafica vera: sprite/mesh dei pianeti e delle navi, effetti.
-- **Schermata di battaglia** con i dadi (come nella versione web).
-- **Salvataggio/caricamento** partita.
-- Menu iniziale, audio, e build dell'**eseguibile** per PC/Steam.
+## Cos'è (e cosa manca)
+**Prototipo con tutta la logica di gioco funzionante**: menu, movimento,
+combattimento coi dadi, mercato, casinò, salvataggio, fine partita.
+Manca solo la **grafica**:
+- esagoni colorati + marker come navi, HUD "debug" (IMGUI);
+- dadi come numeri (niente animazioni), niente sprite di pianeti/navi ancora.
 
 ## Struttura
 ```
 unity/ImperiumGalactica/
-  Assets/Scripts/Engine/      <- motore (copia di csharp/Engine)
-  Assets/Scripts/Prototype/   <- GameBootstrap, HexBoardView, HexMeshFactory
+  Assets/Scripts/Engine/      <- motore (Config, Hex, Rng, Game, Combat,
+                                 CombatSession, Casino, Market, Ai, Serialization)
+  Assets/Scripts/Prototype/   <- GameBootstrap, HexBoardView (UI/gioco),
+                                 HexMeshFactory, SaveSystem
   Packages/manifest.json
   ProjectSettings/ProjectVersion.txt
 ```
+
+## Prossimi passi (li facciamo insieme)
+- **Grafica**: sprite/mesh di pianeti e navi, animazioni dei dadi, effetti battaglia.
+- Menu/HUD grafici (al posto dell'IMGUI di debug), audio.
+- Build dell'**eseguibile** per PC/Steam (posso farla io da qui una volta attiva
+  la licenza).
 
 © 2026 Matteo Congedo — Tutti i diritti riservati.
