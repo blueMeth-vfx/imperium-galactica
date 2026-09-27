@@ -28,3 +28,6 @@ unity/**/[Uu]serSettings/
 unity/**/*.csproj
 unity/**/*.sln
 unity/**/.vs/
+
+# Unity log di batch
+unity/*.log
