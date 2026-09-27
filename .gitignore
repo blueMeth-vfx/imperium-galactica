@@ -9,3 +9,10 @@ Thumbs.db
 node_modules/
 server/.wrangler/
 .wrangler/
+
+# Build C# / Unity (artefatti locali)
+build/
+*.exe
+*.pdb
+csharp/**/bin/
+csharp/**/obj/
