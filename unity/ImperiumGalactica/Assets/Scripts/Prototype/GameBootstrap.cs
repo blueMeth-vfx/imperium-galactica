@@ -11,10 +11,11 @@ namespace ImperiumGalactica.UnityView
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Init()
         {
-            // Evita doppioni se il componente è già in scena
-            if (Object.FindFirstObjectByType<HexBoardView>() != null) return;
+            // Avvia la scena 3D (tabellone + camera intelligente).
+            // Il vecchio prototipo 2D (HexBoardView) resta nel progetto ma non parte.
+            if (Object.FindFirstObjectByType<Board3D>() != null) return;
             GameObject go = new GameObject("ImperiumGalactica");
-            go.AddComponent<HexBoardView>();
+            go.AddComponent<Board3D>();
         }
     }
 }
