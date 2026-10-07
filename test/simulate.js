@@ -6,6 +6,7 @@ require("../data/gamedata.js");
 require("../engine/config.js");
 require("../engine/hex.js");
 require("../engine/game.js");
+require("../engine/diplomacy.js");
 require("../engine/combat.js");
 require("../engine/casino.js");
 require("../engine/market.js");
@@ -18,17 +19,17 @@ const seed = parseInt(process.argv[3] || "7", 10);
 const game = new IG.Game({
   seed,
   players: [
-    { name: "IA Rosso", isAI: true },
-    { name: "IA Blu", isAI: true },
-    { name: "IA Verde", isAI: true },
-    { name: "IA Giallo", isAI: true },
+    { name: "IA Rosso", isAI: true, difficulty: "medio" },
+    { name: "IA Blu", isAI: true, difficulty: "difficile" },
+    { name: "IA Verde", isAI: true, difficulty: "facile" },
+    { name: "IA Giallo", isAI: true, difficulty: "medio" },
   ],
 });
 
 console.log("== Partita simulata (seed " + seed + ", max " + turniMax + " turni) ==\n");
 
 let safety = 0;
-while (!game.winner && game.turnNumber <= turniMax && safety++ < 5000) {
+while (game.winner == null && game.turnNumber <= turniMax && safety++ < 5000) {
   try {
     IG.runAITurn(game);
   } catch (e) {

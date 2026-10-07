@@ -119,7 +119,11 @@
       for (const key in CFG.DIFFICULTY) { const o = htmlEl("option"); o.value = key; o.textContent = CFG.DIFFICULTY[key].label; diff.appendChild(o); }
       diff.value = CFG.DEFAULT_DIFFICULTY;
       ai.addEventListener("change", () => { diff.style.display = ai.checked ? "" : "none"; });
-      row.appendChild(sw); row.appendChild(name); row.appendChild(aiLabel); row.appendChild(diff);
+      // Razza: decide il tipo di pianeta affine (ogni materia +1 per turno su quei pianeti)
+      const race = htmlEl("select", "race-sel"); race.title = "Razza: sui pianeti affini ogni materia prima rende 1 cubo in più";
+      for (const rk of CFG.RACES) { const o = htmlEl("option"); o.value = rk; o.textContent = CFG.raceName(rk) + " (" + CFG.RACE_HOME[rk] + " +1)"; race.appendChild(o); }
+      race.value = CFG.RACES[i % CFG.RACES.length];
+      row.appendChild(sw); row.appendChild(name); row.appendChild(race); row.appendChild(aiLabel); row.appendChild(diff);
       wrap.appendChild(row);
     }
   }
@@ -132,6 +136,7 @@
         name: row.querySelector('input[type=text]').value || ("Giocatore " + (i + 1)),
         isAI: row.querySelector('.ai-check').checked,
         difficulty: row.querySelector('.ai-diff').value,
+        race: row.querySelector('.race-sel').value,
       });
     });
     const seedVal = $("seed").value;
@@ -248,6 +253,7 @@
     (N.roster || []).forEach((pl) => {
       const row = htmlEl("div", "lobby-player");
       row.innerHTML = '<span class="dot" style="background:' + CFG.COLORS[pl.seat] + '"></span> <b>' + esc(pl.name) + "</b>" +
+        ' <span class="muted">' + CFG.raceName(CFG.RACES[pl.seat % CFG.RACES.length]) + "</span>" +
         (pl.seat === N.seat ? ' <span class="tag">tu</span>' : "") + (pl.seat === 0 ? ' <span class="tag">host</span>' : "") +
         (pl.connected ? "" : ' <span class="muted">(offline)</span>');
       box.appendChild(row);
@@ -312,13 +318,13 @@
     render(); centerBoard();
     applyingRemote = false;
     // Dadi d'inizio (una sola volta, alla prima ricezione dello stato)
-    if (!startDiceShown) { startDiceShown = true; showStartDice(() => {}); }
+    if (!startDiceShown) { startDiceShown = true; showStartDice(() => { if (isMyTurn()) maybeShowOffers(); }); }
     showRemoteMoves(newMoves);
     showRemoteEvents(newLines);
     maybeTurnSound();
     if (game.winner != null) showWin();
     else if (!isMyTurn()) toast("Turno di " + game.player(game.currentPlayer).name);
-    else toast("È il tuo turno!");
+    else { toast("È il tuo turno!"); setTimeout(maybeShowOffers, 600); }
     if (window.IGNet && window.IGNet.isHost) autosave(); // l'host salva lo stato condiviso
     driveOnlineBots(); // se tocca a un bot e sono l'host, lo eseguo io
   }
@@ -337,6 +343,7 @@
       render();
       syncNet(); // invia lo stato risultante agli altri
       if (game.winner != null) { showWin(); return; }
+      if (isMyTurn()) setTimeout(maybeShowOffers, 600);     // dopo i bot tocca a me (host): proposte ricevute
       setTimeout(driveOnlineBots, 300); // eventuale bot successivo
     }, 1000);
   }
@@ -369,6 +376,9 @@
       else if (/produce/.test(l)) events.push(["discovery", "🏭", "🏭", l]);
       else if (/costruisce/.test(l)) events.push(["discovery", "🏗️", "🏗️", l]);
       else if (/eliminato/.test(l)) events.push(["malus", "☠️", "☠️", l]);
+      else if (/bottino/.test(l)) events.push(["bonus", "💰", "💰", l]);
+      else if (/sono alleati|non belligeranza fino|rompe l'alleanza|propone a/.test(l)) events.push(["discovery", "🤝", "🤝", l]);
+      else if (/ribattezza/.test(l)) events.push(["discovery", "✏️", "🪐", l]);
     }
     events.slice(0, 6).forEach((e) => flashBanner(e[0], e[1], e[2], e[3], ""));
   }
@@ -625,6 +635,7 @@
     box.appendChild(htmlEl("h3", null, "Fazione attiva"));
     const name = htmlEl("div", "pname"); name.innerHTML = '<span class="dot" style="background:' + p.color + ';color:' + p.color + '"></span>' + esc(p.name) + (p.isAI ? ' <span class="ai-pill">IA</span>' : '');
     box.appendChild(name);
+    box.appendChild(htmlEl("div", "info-line muted", CFG.raceName(p.race) + " — pianeti " + CFG.RACE_HOME[p.race] + ": +1 a ogni materia"));
     const res = htmlEl("div", "res");
     res.innerHTML =
       '<div class="pill money"><span class="ic">💰</span><b>' + p.money.toLocaleString() + '</b> Ndri</div>' +
@@ -1098,7 +1109,8 @@
       '<div class="pc-h" style="--pc:' + (PLANET_COLORS[d.tipo] || "#8ab") + '"><span class="pc-emoji">' + (PLANET_EMOJI[d.tipo] || "🪐") + "</span>" +
       '<div><div class="pc-name">' + esc(d.nome) + '</div><div class="pc-type">Pianeta ' + d.tipo + "</div></div></div>" +
       (owner
-        ? '<div class="pc-owner"><span class="dot" style="background:' + owner.color + '"></span>' + esc(owner.name) + "</div>"
+        ? '<div class="pc-owner"><span class="dot" style="background:' + owner.color + '"></span>' + esc(owner.name) + ' <span class="muted">' + CFG.raceName(owner.race) + "</span>" +
+          (game.planetBonus(cell) ? ' <span class="tag">affine: +1 a ogni materia</span>' : "") + "</div>"
         : '<div class="pc-owner free">Libero — colonizzabile</div>') +
       '<div class="pc-stats">' +
       "<span>⚙️ Prod ×" + d.produttivita + "</span><span>💰 Eco ×" + d.economia + "</span>" +
@@ -1169,7 +1181,6 @@
     if (cell.garrison + carriAssign.card.qta > CFG.MAX_CARRI_PIANETA) { toast("Il pianeta non ha spazio (max " + CFG.MAX_CARRI_PIANETA + " carri)."); return false; }
     const r2 = game.marketBuy(carriAssign.fleetId, carriAssign.card, { q: q, r: r });
     if (!r2.ok) { toast("❌ " + (r2.msg || "Assegnazione non riuscita.")); return false; }
-    if (marketCardCache[carriAssign.fleetId]) marketCardCache[carriAssign.fleetId].bought = true;
     flashBanner("bonus", "🛒 Mercato", "🪖", "Assegnati " + carriAssign.card.qta + "× Carri", "a " + cell.planet.data.nome);
     carriAssign = null;
     render(); syncNet();
@@ -1178,7 +1189,7 @@
 
   // ---------------------------------------------------------------- INTERAZIONE
   function onCellClick(q, r) {
-    if (game.winner) return;
+    if (game.winner != null) return;
     if (justPanned) return; // era un trascinamento della vista, non un clic sulla cella
     if (carriAssign) { tryAssignCarri(q, r); return; } // modalità assegnazione carri
     const p = game.player(game.currentPlayer);
@@ -1206,6 +1217,18 @@
     if (!ev.ok) { toast(ev.msg); return; }
     const newly = ev.revealed && ev.revealed.newly;
 
+    // Pianeta senza difese: si prende senza combattere (con una Torpediniera o dei carri)
+    if (ev.event === "planetCombat" && game.planetUndefended(game.cell(q, r))) {
+      const ucell = game.cell(q, r);
+      const cap = game.captureUndefended(ev.attacker, q, r);
+      sel.fleetId = game.fleetById(ev.attacker) ? ev.attacker : null; sel.cellKey = Hex.key(q, r);
+      render(); if (newly) pulseCell(q, r);
+      if (cap.outcome === "captured") flashBanner("bonus", "🚩 Pianeta indifeso", "🚩", ucell.planet.data.nome + " è tuo", "Nessuna difesa: preso senza combattere.");
+      else toast("Pianeta indifeso, ma per prenderlo servono una Torpediniera o dei carri.");
+      syncNet();
+      if (game.winner != null) showWin();
+      return;
+    }
     // Combattimenti: il pannello del combattimento è già visivo
     if (ev.event === "combat") { render(); if (newly) pulseCell(q, r); return promptFleetCombat(ev); }
     if (ev.event === "planetCombat") { render(); if (newly) pulseCell(q, r); return promptPlanetCombat(ev); }
@@ -1230,6 +1253,7 @@
     // Eventi visivi (banner) e finestre
     if (ev.asteroid) showAsteroidCard(ev.asteroid, ev.event === "destroyed");
     else if (newly && ev.revealed.type !== "space") showDiscoveryCard(ev.revealed);
+    if (ev.planetPass) toast("Il pianeta non ha difese spaziali e la flotta non può sbarcare: nessuna battaglia.");
     syncNet(); // sincronizza lo spostamento agli altri giocatori online
     if (ev.event === "casino") openCasino(ev.fleet || fleetId);
     else if (ev.canColonize) promptColonize(ev.fleet || fleetId);
@@ -1346,12 +1370,16 @@
         const income = game.planetIncome(cell);
         body.appendChild(htmlEl("div", "info-line", "Pianeta " + d.nome + " — " + d.tipo + " | ⚙️ Prod ×" + d.produttivita + " | 💰 Eco ×" + d.economia));
         const incLine = htmlEl("div", "info-line");
-        incLine.innerHTML = "Materie/turno: ⛽×" + d.moltMaterie.carburante + " 🔩×" + d.moltMaterie.metallo + " 🪨×" + d.moltMaterie.pietra +
+        const bon = game.planetBonus(cell) ? '<span class="muted">+1</span>' : "";
+        incLine.innerHTML = "Materie/turno: ⛽×" + d.moltMaterie.carburante + bon + " 🔩×" + d.moltMaterie.metallo + bon + " 🪨×" + d.moltMaterie.pietra + bon +
           " | 💵 <b>" + income.toLocaleString() + "</b>/turno" + (cell.buildings.tesoreria ? ' <span class="muted">(+' + (cell.buildings.tesoreria * CFG.TESORERIA_BONUS).toLocaleString() + " tesorerie)</span>" : "");
         body.appendChild(incLine);
         if (cell.owner != null) {
           const b = cell.buildings;
-          body.appendChild(htmlEl("div", "info-line", "Proprietario: " + game.player(cell.owner).name));
+          body.appendChild(htmlEl("div", "info-line", "Proprietario: " + game.player(cell.owner).name + " (" + CFG.raceName(game.player(cell.owner).race) + ")"));
+          if (canControl() && game.canRename(p.id, cell)) {
+            const rn = htmlEl("button", "small", "✏ Rinomina il pianeta"); rn.onclick = () => openRename(q, r); body.appendChild(rn);
+          }
           const slots = Object.values(b).reduce((a, c) => a + c, 0);
           const bLine = htmlEl("div", "info-line");
           const bParts = Object.keys(BUILD_ICONS).filter((k) => b[k] > 0).map((k) => BUILD_ICONS[k] + b[k]);
@@ -1462,6 +1490,21 @@
       }
       if (game.phase === "movimento") {
         const sp = htmlEl("button", "small", "Dividi flotta"); sp.onclick = () => openSplit(f.id); grid.appendChild(sp);
+        // flotta nemica ferma nella stessa casella: si attacca senza muoversi
+        if (f.stepsLeft > 0 && cell.type !== "casino" && game.enemyFleetHere(f)) {
+          const at = htmlEl("button", "small", "⚔ Attacca qui"); at.onclick = () => {
+            const ev = game.attackHere(f.id); if (!ev.ok) { toast(ev.msg); return; }
+            render(); promptFleetCombat(ev);
+          };
+          grid.appendChild(at);
+        }
+      }
+      // alleati nella stessa casella (o sopra un loro pianeta): scambi di Ndri e materie
+      for (const o of game.players) {
+        if (o.id === f.owner || o.eliminated || !game.allied(f.owner, o.id)) continue;
+        const meet = game.fleets.some((x) => x.owner === o.id && x.q === f.q && x.r === f.r) || cell.owner === o.id;
+        if (!meet) continue;
+        const tr = htmlEl("button", "small", "🎁 Scambia con " + o.name); tr.onclick = () => openTrade(o.id); grid.appendChild(tr);
       }
     }
     wrap.appendChild(grid);
@@ -1543,11 +1586,14 @@
     const att = game.fleetById(ev.attacker), def = game.fleetById(ev.defender);
     if (!att || !def) return;
     const aOwner = game.player(att.owner), dOwner = game.player(def.owner);
+    const allies = game.alliedDefenders(def.q, def.r, def.owner, att.owner);
+    const defComp = fleetComp(def);
+    for (const al of allies) { const c = fleetComp(al); for (const k in c) defComp[k] = (defComp[k] || 0) + c[k]; }
     const body = htmlEl("div");
     const grid = htmlEl("div", "battle-grid");
     grid.appendChild(battleCol("La tua flotta", aOwner.color, fleetComp(att), null));
     grid.appendChild(htmlEl("div", "vs-badge", "VS"));
-    grid.appendChild(battleCol(dOwner.name, dOwner.color, fleetComp(def), null));
+    grid.appendChild(battleCol(game.defenderSideName(def.owner, allies), dOwner.color, defComp, null));
     body.appendChild(grid);
     body.appendChild(htmlEl("p", "muted center", "Lancerai tu i tuoi dadi, uno per uno."));
     modal("⚔ Scontro spaziale (" + ev.q + "," + ev.r + ")", body, [
@@ -1585,10 +1631,11 @@
     const att = game.fleetById(ev.attacker);
     if (kind === "fleet") {
       const def = game.fleetById(ev.defender);
-      const uA = game._shipUnits(att), uB = game._shipUnits(def);
+      const fs = game.fleetCombatSetup(att, def);                 // con le flotte alleate del difensore
+      const uA = fs.uA, uB = fs.uB;
       combatCtx = { kind: kind, phase: "space", att: att, def: def, ev: ev, uA: uA, uB: uB,
         attName: game.player(att.owner).name, attColor: game.player(att.owner).color,
-        defName: game.player(def.owner).name, defColor: game.player(def.owner).color,
+        defName: game.defenderSideName(def.owner, fs.allies), defColor: game.player(def.owner).color,
         mySide: opts.mySide || "A", onDone: opts.onDone || null,
         session: game.makeCombatSession(uA, uB, false) };
     } else {
@@ -1617,6 +1664,12 @@
     let defenderSeat = null;
     if (kind === "fleet") { const def = game.fleetById(ev.defender); defenderSeat = def ? def.owner : null; }
     else { const cell = game.cell(ev.q, ev.r); defenderSeat = cell ? cell.owner : null; }
+    // un difensore del computer con un alleato umano nella casella: i dadi li tira l'alleato
+    if (defenderSeat != null && game.player(defenderSeat).isAI) {
+      const att = game.fleetById(ev.attacker);
+      const hum = att ? game.alliedDefenders(ev.q, ev.r, defenderSeat, att.owner).find((a) => !game.player(a.owner).isAI) : null;
+      if (hum) defenderSeat = hum.owner;
+    }
     if (onlineMode && defenderSeat != null && defenderSeat !== myPlayerId) {
       const cid = "c" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
       window.IGNet.sendCombat({ sub: "start", cid: cid, kind: kind, attacker: ev.attacker, defender: ev.defender != null ? ev.defender : null, q: ev.q, r: ev.r, land: ev.land || 0, attackerSeat: myPlayerId, defenderSeat: defenderSeat });
@@ -1634,6 +1687,8 @@
       if (m.defenderSeat !== myPlayerId) return; // non tocca a me difendere
       if (combatCtx) { pendingCombatStarts.push(m); return; } // in corso: accoda (niente scontri persi)
       startDefenseCombat(m);
+    } else if (m.sub === "retreat") {                          // l'attaccante si è ritirato
+      if (combatCtx && combatCtx.net && combatCtx.cid === m.cid) applyRetreat(false);
     } else if (m.sub === "roll") {
       if (combatCtx && combatCtx.net && combatCtx.cid === m.cid) {
         combatCtx.enemyByKey[m.key] = m.dice || [];
@@ -1919,6 +1974,13 @@
     const acts = $("modalActions"); acts.innerHTML = "";
     const yoursDone = yours.every((d) => d.die != null), enemyDone = enemy.every((d) => d.die != null);
 
+    // Ritirata: solo l'attaccante, a scambio pari e prima di tirare i propri dadi del round
+    if (ctx.mySide === "A" && s.canRetreat()) {
+      const rb = htmlEl("button", null, "🏳 Ritirata"); rb.title = "La flotta resta dov'era, ferma per questo turno";
+      rb.onclick = () => { if (ctx.net) window.IGNet.sendCombat({ sub: "retreat", cid: ctx.cid }); applyRetreat(true); };
+      acts.appendChild(rb);
+    }
+
     // --- Combattimento in rete: ognuno lancia SOLO i propri dadi ---
     if (ctx.net) {
       // Invio SEMPRE lo stato attuale dei miei dadi (anche parziale): l'avversario
@@ -1981,6 +2043,15 @@
     else { combatCtx.session.startRound(); renderCombat(); }
   }
 
+  // Ritirata dell'attaccante (mine = l'ho decisa io)
+  function applyRetreat(mine) {
+    const ctx = combatCtx; if (!ctx) return;
+    if (ctx.kind === "fleet") game.applyFleetCombatResult(ctx.att, ctx.def, ctx.uA, ctx.uB, "retreat");
+    else if (ctx.phase === "space") game.applyPlanetSpaceResult(ctx.att, ctx.cell, ctx.defFleet, ctx.uA, ctx.uB, "retreat");
+    else game.applyPlanetGroundResult(ctx.att, ctx.cell, ctx.landN, ctx.gtA, ctx.gtB, "retreat");
+    showCombatEnd(endDisplay("retreat"));
+  }
+
   // Esito mostrato dalla prospettiva giusta (attacco vs difesa)
   function endDisplay(code) {
     const def = combatCtx && combatCtx.mySide === "B";
@@ -1994,6 +2065,7 @@
       spaceWonNoCapture: ["DIFESE SUPERATE", "push", "Difese spaziali cadute", "push"],
       spaceWonNoLand: ["DIFESE A TERRA INTATTE", "push", "🛡 Terra difesa", "win"],
       groundFailed: ["SBARCO RESPINTO", "lose", "🛡 SBARCO RESPINTO", "win"],
+      retreat: ["🏳 RITIRATA", "push", "🛡 IL NEMICO SI RITIRA", "win"],
     };
     const e = M[code] || ["Esito", "push", "Esito", "push"];
     return def ? { text: e[2], type: e[3] } : { text: e[0], type: e[1] };
@@ -2003,6 +2075,7 @@
     const ctx = combatCtx, s = ctx.session, winner = s.winner;
     if (ctx.kind === "fleet") {
       game.applyFleetCombatResult(ctx.att, ctx.def, ctx.uA, ctx.uB, winner);
+      if (winner === "A" && ctx.mySide === "A" && !ctx.onDone) ctx.afterVictory = ctx.att.id;   // poi: pianeta sotto la flotta
       return showCombatEnd(endDisplay(winner === "A" ? "winA" : winner === "B" ? "winB" : "draw"));
     }
     // PIANETA
@@ -2039,6 +2112,7 @@
     const onDone = combatCtx ? combatCtx.onDone : null;
     const mySide = combatCtx ? combatCtx.mySide : "A";
     const net = combatCtx ? combatCtx.net : false;
+    const afterVictory = combatCtx ? combatCtx.afterVictory : null;
     const body = htmlEl("div");
     const ban = htmlEl("div", "outcome-banner " + out.type); ban.textContent = out.text; body.appendChild(ban);
     body.appendChild(htmlEl("p", "muted center", "Premi OK per continuare."));
@@ -2057,6 +2131,8 @@
       if (onDone) { onDone(); return; }  // riprende il turno dell'IA dopo la difesa
       if (!(net && mySide === "B")) syncNet(); // online: l'attaccante sincronizza l'esito (il difensore no)
       processPendingCombat(); // eventuale secondo combattimento in coda (doppio combattimento)
+      if (afterVictory != null) afterFleetVictory(afterVictory);
+      else setTimeout(maybePendingClash, 300);
     };
     acts.appendChild(ok);
     combatCtx = null;
@@ -2182,11 +2258,18 @@
   }
 
   // ---------------------------------------------------------------- MERCATO
-  let marketCardCache = {}; // fleetId -> {turn, card, bought} (una carta per turno)
+  // L'offerta resta la stessa per tutto il turno, qualunque flotta si selezioni: cambia solo quando la
+  // si compra (e ogni flotta compra al massimo una volta per turno).
+  let marketOffer = null; // { player, turn, card, boughtFleets: [] }
   function openMarket(fleetId) {
     const f = game.fleetById(fleetId); if (!f) return;
-    let entry = marketCardCache[fleetId];
-    if (!entry || entry.turn !== game.turnNumber) { entry = { turn: game.turnNumber, card: game.marketDraw(), bought: false }; marketCardCache[fleetId] = entry; }
+    if (!marketOffer || marketOffer.player !== game.currentPlayer || marketOffer.turn !== game.turnNumber)
+      marketOffer = { player: game.currentPlayer, turn: game.turnNumber, card: game.marketDraw(), boughtFleets: [] };
+    const entry = {
+      get card() { return marketOffer.card; },
+      get bought() { return marketOffer.boughtFleets.indexOf(fleetId) >= 0; },
+      set bought(v) { if (v) { marketOffer.boughtFleets.push(fleetId); marketOffer.card = game.marketDraw(); } },
+    };
 
     function refresh() {
       const p = game.player(f.owner);
@@ -2200,41 +2283,36 @@
         '<div class="md-info"><div class="md-title">' + card.qta + "× " + esc(unitName) + "</div>" +
         '<div class="md-price">' + card.prezzo.toLocaleString() + " Ndri</div></div>";
       body.appendChild(dealBox);
-      if (entry.bought) body.appendChild(htmlEl("div", "info-line", "✓ Deal già acquistato questo turno."));
+      if (entry.bought) body.appendChild(htmlEl("div", "info-line", "✓ Questa flotta ha già comprato un'offerta in questo turno."));
       else if (p.money < card.prezzo) body.appendChild(htmlEl("div", "info-line", "⚠ Ndri insufficienti per questo deal."));
 
+      if (card.unita === "carri") body.appendChild(htmlEl("div", "info-line muted", "Posti per i carri sulla flotta: " + game.carriRoomAtMarket(f) + " (Torpediniera 2, Nave Colonia 3)."));
+
       body.appendChild(htmlEl("h3", null, "Compra/vendi cubi materia"));
+      body.appendChild(htmlEl("div", "info-line muted", "Il mercato parte vuoto: si compra solo quello che i giocatori ci hanno venduto. Per comprare serve almeno un pianeta."));
+      const stock = game.stockAt(f.q, f.r), hasPlanet = game.planetsOf(f.owner).length > 0;
       for (const m of ["carburante", "metallo", "pietra"]) {
         const row = htmlEl("div", "field-row");
-        row.appendChild(htmlEl("span", null, m + " (hai " + p.res[m] + ")"));
-        const buy = htmlEl("button", "small", "Compra (" + CFG.PREZZO_ACQUISTO_CUBO / 1000 + "k)"); buy.disabled = p.money < CFG.PREZZO_ACQUISTO_CUBO; buy.onclick = () => { const r = game.marketTradeCube(f.owner, m, 1, false); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); refresh(); };
-        const sell = htmlEl("button", "small", "Vendi (" + CFG.PREZZO_VENDITA_CUBO / 1000 + "k)"); sell.disabled = p.res[m] < 1; sell.onclick = () => { const r = game.marketTradeCube(f.owner, m, 1, true); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); refresh(); };
+        row.appendChild(htmlEl("span", null, m + " (hai " + p.res[m] + ", in vendita " + stock[m] + ")"));
+        const buy = htmlEl("button", "small", "Compra (" + CFG.PREZZO_ACQUISTO_CUBO / 1000 + "k)"); buy.disabled = p.money < CFG.PREZZO_ACQUISTO_CUBO || stock[m] < 1 || !hasPlanet; buy.onclick = () => { const r = game.marketTradeCube(f.owner, m, 1, false, f.q, f.r); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); refresh(); };
+        const sell = htmlEl("button", "small", "Vendi (" + CFG.PREZZO_VENDITA_CUBO + ")"); sell.disabled = p.res[m] < 1; sell.onclick = () => { const r = game.marketTradeCube(f.owner, m, 1, true, f.q, f.r); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); refresh(); };
         row.appendChild(buy); row.appendChild(sell); body.appendChild(row);
       }
 
-      // Acquisto della carta (per i carri: nave se c'è capienza, altrimenti scelta del pianeta)
-      function tryBuyCard(targetPlanet) {
-        const r = game.marketBuy(fleetId, card, targetPlanet);
+      // Acquisto della carta (i carri solo se c'è posto a bordo per tutti)
+      function tryBuyCard() {
+        const r = game.marketBuy(fleetId, card);
         if (r.ok) {
           entry.bought = true; render(); syncNet();
-          flashBanner("bonus", "🛒 Mercato", "🛒", "Acquistati " + card.qta + "× " + unitName, r.dest === "planet" ? "assegnati a un pianeta" : "caricati sulla flotta");
+          flashBanner("bonus", "🛒 Mercato", "🛒", "Acquistati " + card.qta + "× " + unitName, "nella flotta");
           refresh(); return;
         }
-        if (r.needPlanet) { chooseCarriPlanet(); return; }
         toast("❌ " + r.msg);
       }
-      function chooseCarriPlanet() {
-        // Modalità "assegna cliccando": si chiude il mercato e si clicca il pianeta
-        // sul tabellone (o la sua carta in mano) tra quelli con spazio in guarnigione.
-        carriAssign = { fleetId: fleetId, card: card };
-        closeModal();
-        render();
-        toast("🪖 Clicca un tuo pianeta (o la sua carta) per assegnare " + card.qta + " carri.");
-        flashBanner("discovery", "🪖 Assegna carri", "🪖", "Scegli il pianeta di destinazione", "Clicca un pianeta con spazio (max " + CFG.MAX_CARRI_PIANETA + ")");
-      }
 
+      const noRoom = card.unita === "carri" && game.carriRoomAtMarket(f) < card.qta;
       const actions = [];
-      if (!entry.bought) actions.push({ label: "🛒 Acquista il deal (" + (card.prezzo / 1000) + "k)", primary: true, disabled: p.money < card.prezzo, onClick: () => tryBuyCard() });
+      if (!entry.bought) actions.push({ label: noRoom ? "Non c'è posto a bordo" : "🛒 Acquista l'offerta (" + (card.prezzo / 1000) + "k)", primary: true, disabled: p.money < card.prezzo || noRoom, onClick: () => tryBuyCard() });
       actions.push({ label: "Chiudi", onClick: () => { closeModal(); render(); } });
       modal("🛒 Mercato", body, actions);
     }
@@ -2248,7 +2326,7 @@
     function refresh() {
       const s = game._casinoSession(pid);
       const body = htmlEl("div");
-      body.appendChild(htmlEl("p", null, "Banca Interstellare. Somma 7/11 vince (raddoppia il banco), 2/3/12 perde, altro = pareggio (rilancia con escalation o lascia)."));
+      body.appendChild(htmlEl("p", null, "Banca Interstellare. Somma 7/11 vince (incassi il triplo del banco), 2/3/12 perde, altro = pareggio (rilancia aggiungendo almeno quanto è sul banco, o lascia)."));
       body.appendChild(htmlEl("div", "info-line", "Banco attuale: " + s.banco.toLocaleString() + " Ndri | Tuoi Ndri: " + game.player(pid).money.toLocaleString()));
       const row = htmlEl("div", "field-row");
       const minBet = s.banco > 0 ? Math.max(CFG.CASINO_PUNTATA_MIN, s.banco) : CFG.CASINO_PUNTATA_MIN;
@@ -2308,7 +2386,7 @@
     tumblePips([d1, d2], [roll.d1, roll.d2], () => {
       acts.style.visibility = "";
       let msg, cls;
-      if (roll.outcome === "win") { msg = "🎉 " + roll.d1 + " + " + roll.d2 + " = " + roll.sum + " — VINCI! Il banco si raddoppia."; cls = "win"; }
+      if (roll.outcome === "win") { msg = "🎉 " + roll.d1 + " + " + roll.d2 + " = " + roll.sum + " — VINCI! Incassi il triplo del banco."; cls = "win"; }
       else if (roll.outcome === "lose") { msg = "💸 " + roll.d1 + " + " + roll.d2 + " = " + roll.sum + " — perdi il banco."; cls = "lose"; }
       else { msg = "➖ " + roll.d1 + " + " + roll.d2 + " = " + roll.sum + " — pareggio."; cls = "push"; }
       outBox.textContent = msg; outBox.className = "casino-outcome " + cls;
@@ -2429,6 +2507,7 @@
     const p = game.player(game.currentPlayer);
     if (!onlineMode) { maybeTurnSound(); autosave(); } // salvataggio automatico a ogni turno (SP)
     if (!p.isAI) maybeShowRiscossione(); // per l'IA la riscossione è già nel riepilogo eventi (niente sovrapposizioni)
+    if (!p.isAI && canControl()) setTimeout(maybeShowOffers, 500);      // proposte di patto che aspettano la tua risposta
     if (p.isAI) {
       aiOverlay(true, aiName(p), p.color);
       const before = game.log.length;
@@ -2495,6 +2574,7 @@
       else if (/Asteroidi.*perde/.test(l)) events.push(["malus", "☄️ IA", "💥", l]);
       else if (/Asteroidi.*guadagna/.test(l)) events.push(["bonus", "☄️ IA", "✨", l]);
       else if (/eliminato/.test(l)) events.push(["malus", "☠️", "☠️", l]);
+      else if (/bottino/.test(l)) events.push(["bonus", "💰", "💰", l]);
     }
     // La coda dei banner gestisce ritmo e (eventuale) conferma: accodo tutto e proseguo.
     events.slice(0, 8).forEach((e) => flashBanner(e[0], e[1], e[2], e[3], ""));
@@ -2502,19 +2582,20 @@
   }
 
   function advancePhase() {
-    if (game.winner || !canControl()) return;
+    if (game.winner != null || !canControl()) return;
     const prevPlayer = game.currentPlayer, prevTurn = game.turnNumber;
     game.advancePhase();
     if (game.currentPlayer !== prevPlayer || game.turnNumber !== prevTurn) Snd.passTurn(); // suono di passaggio turno
     sel = { fleetId: null, cellKey: null };
     syncNet(); // invia lo stato (incluso l'eventuale passaggio di turno) agli altri
     checkTurn();
+    if (game.phase === "movimento" && canControl()) setTimeout(maybePendingClash, 350);
   }
 
   // ---------------------------------------------------------------- TUTORIAL
   const TUTORIAL_PAGES = [
     { icon: "🌌", title: "Benvenuto, Comandante",
-      html: "<p><b>Imperium Galactica</b> è un gioco di conquista spaziale a turni. Parti da un angolo della galassia con una piccola flotta e devi <b>espanderti, colonizzare pianeti e sconfiggere le altre fazioni</b>.</p>" +
+      html: "<p><b>Voyager</b> è un gioco di conquista spaziale a turni. Parti da un angolo della galassia con una piccola flotta e devi <b>espanderti, colonizzare pianeti e sconfiggere le altre fazioni</b>.</p>" +
         "<p><b>Obiettivo:</b> essere l'ultima fazione rimasta — elimina tutte le altre conquistandone i pianeti e distruggendone le flotte.</p>" +
         "<p class='tut-tip'>💡 Puoi giocare in <b>locale</b> (stesso dispositivo, anche contro l'IA), <b>online</b> con gli amici, o aggiungere <b>bot IA</b> nelle partite online.</p>" },
     { icon: "🔄", title: "Le 4 fasi del turno",
@@ -2528,9 +2609,9 @@
     { icon: "🚀", title: "Flotte e movimento",
       html: "<p>Nella fase <b>Movimento</b> seleziona una flotta e clicca una cella <b>adiacente evidenziata in oro</b> per spostarti di un passo.</p>" +
         "<ul class='tut-list'>" +
-        "<li>🚀 <b>Caccia</b> — economico, attacca due volte. Flotte di soli Caccia muovono di <b>2</b> caselle.</li>" +
-        "<li>🛸 <b>Torpediniera</b> — forte in attacco/difesa, trasporta carri.</li>" +
-        "<li>🪐 <b>Nave Colonia</b> — serve a colonizzare i pianeti (viene consumata).</li>" +
+        "<li>🚀 <b>Caccia</b> — economico (att 1, dif 1), attacca due volte. Flotte di soli Caccia muovono di <b>2</b> caselle.</li>" +
+        "<li>🛸 <b>Torpediniera</b> — att 2, dif 2, trasporta 2 carri.</li>" +
+        "<li>🪐 <b>Nave Colonia</b> — att 0,5, dif 2, trasporta 3 carri; serve a colonizzare i pianeti (viene consumata).</li>" +
         "<li>🪖 <b>Carri</b> — truppe di terra per conquistare e presidiare i pianeti.</li></ul>" +
         "<p class='tut-tip'>💡 Usa <b>Dividi flotta</b> per staccare alcune unità in una nuova flotta. Le celle sconosciute (col «?») si rivelano quando ci arrivi.</p>" },
     { icon: "🪐", title: "Pianeti ed edifici",
@@ -2551,8 +2632,9 @@
     { icon: "🛰️", title: "Mercato, Casinò e vittoria",
       html: "<p>Alcune celle speciali offrono opportunità:</p>" +
         "<ul class='tut-list'>" +
-        "<li>🛰 <b>Mercato</b> — compra navi/carri e scambia materie. I carri senza posto sulle navi si assegnano cliccando un tuo pianeta.</li>" +
-        "<li>🎲 <b>Casinò</b> — punta Ndri: 7 o 11 vinci, 2/3/12 perdi.</li>" +
+        "<li>🛰 <b>Mercato</b> — un'offerta di navi o carri per turno; materie a 2.000 (compra) e 500 (vendi). Si compra solo ciò che altri hanno venduto. I carri servono posti a bordo.</li>" +
+        "<li>🎲 <b>Casinò</b> — punta Ndri: 7 o 11 incassi il triplo del banco, 2/3/12 perdi.</li>" +
+        "<li>🤝 <b>Diplomazia</b> — alleanze (anche con scambi) e non belligeranze a tempo.</li>" +
         "<li>☄️ <b>Asteroidi</b> — bonus o malus a sorpresa.</li></ul>" +
         "<p>Continua a espanderti e a eliminare gli avversari finché <b>resti l'unica fazione</b>. Buona conquista! 🏆</p>" +
         "<p class='tut-tip'>💡 Puoi salvare (💾) e riprendere la partita, e regolare audio/animazioni dalla barra in alto.</p>" },
@@ -2569,7 +2651,7 @@
     if (page > 0) actions.push({ label: "◂ Indietro", onClick: () => showTutorial(page - 1) });
     if (page < TUTORIAL_PAGES.length - 1) actions.push({ label: "Avanti ▸", primary: true, onClick: () => showTutorial(page + 1) });
     else actions.push({ label: "🎮 Ho capito!", primary: true, onClick: closeModal });
-    actions.push({ label: "Scarica il manuale ⬇", onClick: () => { const a = document.createElement("a"); a.href = "docs/Manuale_Imperium_Galactica.pdf"; a.download = ""; a.click(); } });
+    actions.push({ label: "Scarica il manuale ⬇", onClick: () => { const a = document.createElement("a"); a.href = "docs/Manuale_Voyager.pdf"; a.download = ""; a.click(); } });
     modal("📖 Tutorial", body, actions);
   }
 
@@ -2580,9 +2662,145 @@
       "<p><b>Obiettivo:</b> eliminare tutte le altre fazioni.</p>" +
       "<p><b>Fasi del turno:</b> 1) Riscossione (automatica) · 2) Produzione (navi/carri sui pianeti con fabbrica) · 3) Movimento (esplora, colonizza, attacca) · 4) Costruzione (1 edificio/pianeta) e commercio.</p>" +
       "<p><b>Movimento:</b> seleziona una flotta, poi clicca una cella adiacente evidenziata. Flotte di soli Caccia muovono di 2.</p>" +
-      "<p><b>Combattimento:</b> spostati su una flotta/pianeta nemico per attaccare. Risoluzione a dadi automatica (vedi diario).</p>" +
-      "<p><b>Colonizzazione:</b> serve una Nave Colonia nella flotta (viene consumata).</p>";
+      "<p><b>Combattimento:</b> spostati su una flotta/pianeta nemico per attaccare: si tirano i dadi round per round. Chi attacca può ritirarsi a scambio pari. Due flotte nemiche nella stessa casella combattono all'inizio del movimento. Un pianeta senza difese si prende senza combattere (con una Torpediniera o dei carri).</p>" +
+      "<p><b>Colonizzazione:</b> serve una Nave Colonia nella flotta (viene consumata, i suoi carri sbarcano); chi colonizza può rinominare il pianeta.</p>" +
+      "<p><b>Razze:</b> sui pianeti affini alla tua razza ogni materia prima rende 1 cubo in più per turno.</p>" +
+      "<p><b>Diplomazia:</b> alleanze (niente scontri, scambi di Ndri e materie, difesa comune) e non belligeranze da 1 a 10 turni.</p>" +
+      "<p><b>Eliminazione:</b> senza pianeti né flotte si è fuori; chi elimina prende Ndri e materie dello sconfitto.</p>";
     modal("Regole rapide", body, [{ label: "Chiudi", primary: true, onClick: closeModal }]);
+  }
+
+  // ---------------------------------------------------------------- REGOLE NUOVE
+  // Vinta una battaglia tra flotte sopra un pianeta, la flotta è già lì: pianeta libero con una Nave
+  // Colonia -> si propone di colonizzarlo; pianeta nemico difeso -> si può attaccarlo subito; nemico
+  // rimasto senza difese -> lo si prende.
+  function afterFleetVictory(fleetId) {
+    const af = game.fleetById(fleetId);
+    if (!af || game.winner != null || game.phase !== "movimento" || game.player(af.owner).isAI) return;
+    const c = game.cell(af.q, af.r);
+    if (!c || c.type !== "planet" || !c.planet) return;
+    if (c.owner == null) { if (af.ships.colonia > 0) promptColonize(af.id); return; }
+    if (c.owner === af.owner || game.friendly(c.owner, af.owner)) return;
+    if (!game.planetUndefended(c)) { promptPlanetCombat({ ok: true, event: "planetCombat", attacker: af.id, q: c.q, r: c.r }); return; }
+    const cap = game.captureUndefended(af.id, c.q, c.r);
+    render(); syncNet();
+    if (cap.outcome === "captured") flashBanner("bonus", "🚩 Pianeta indifeso", "🚩", c.planet.data.nome + " è tuo", "Nessuna difesa: preso senza combattere.");
+    else toast("Pianeta indifeso, ma per prenderlo servono una Torpediniera o dei carri.");
+    if (game.winner != null) showWin();
+  }
+
+  // Due flotte di colori diversi nella stessa casella: all'inizio del movimento si combatte subito
+  function maybePendingClash() {
+    if (!game || game.winner != null || !canControl() || combatCtx || !$("modal").classList.contains("hidden")) return;
+    const clash = game.pendingClash(game.currentPlayer);
+    if (!clash) return;
+    toast("Flotta nemica nella stessa casella: si combatte!");
+    const att = game.fleetById(clash.attacker);
+    if (clash.event === "combat") launchAttack("fleet", clash);
+    else launchAttack("planet", Object.assign({}, clash, { land: att ? att.carri : 0 }));
+  }
+
+  // Rinomina del pianeta (solo chi l'ha colonizzato e lo possiede)
+  function openRename(q, r) {
+    const cell = game.cell(q, r); if (!cell) return;
+    const body = htmlEl("div");
+    body.appendChild(htmlEl("p", null, "Dai un nome al pianeta (da 2 a 18 caratteri). Chi lo conquisterà dopo non potrà cambiarlo."));
+    const inp = htmlEl("input"); inp.type = "text"; inp.maxLength = 18; inp.value = cell.planet.data.nome; inp.style.width = "100%";
+    body.appendChild(inp);
+    const ok = () => { const r2 = game.renamePlanet(game.currentPlayer, q, r, inp.value); if (!r2.ok) { toast(r2.msg); return; } closeModal(); render(); syncNet(); };
+    inp.onkeydown = (e) => { if (e.key === "Enter") ok(); };
+    modal("✏ Rinomina " + cell.planet.data.nome, body, [{ label: "Rinomina", primary: true, onClick: ok }, { label: "Annulla", onClick: closeModal }]);
+    setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  }
+
+  // Diplomazia: stato con ogni giocatore, proposte, rottura dell'alleanza
+  function openDiplomacy() {
+    if (!game) return;
+    const me = onlineMode ? myPlayerId : game.currentPlayer;
+    if (me == null || me < 0) return;
+    const body = htmlEl("div");
+    body.appendChild(htmlEl("p", "muted", "Alleanza: non vi attaccate, le flotte stanno insieme, potete scambiarvi Ndri e materie e vi difendete a vicenda. Non belligeranza: niente attacchi per 1-10 turni, senza scambi, e non si può rompere. Le proposte si fanno nel proprio turno."));
+    const myTurn = canControl() && game.currentPlayer === me;
+    for (const o of game.players) {
+      if (o.id === me) continue;
+      const row = htmlEl("div", "field-row");
+      const pact = game.pactOf(me, o.id);
+      let st = o.eliminated ? "fuori dalla partita" : "in guerra";
+      if (pact && pact.kind === "alleanza") st = "🤝 alleati";
+      else if (pact && game.friendly(me, o.id)) st = "🕊 non belligeranza fino al turno " + pact.until;
+      const pending = game.pactOffers.find((x) => (x.from === me && x.to === o.id) || (x.from === o.id && x.to === me));
+      if (pending) st += pending.from === me ? " · proposta inviata" : " · ti ha fatto una proposta";
+      const lab = htmlEl("span"); lab.innerHTML = '<span class="dot" style="background:' + o.color + '"></span> <b>' + esc(o.name) + "</b> " + (o.isAI ? '<span class="ai-pill">IA</span> ' : "") + '<span class="muted">' + st + "</span>";
+      row.appendChild(lab);
+      if (myTurn && !o.eliminated && !pending) {
+        if (!game.allied(me, o.id)) {
+          const al = htmlEl("button", "small", "Proponi alleanza");
+          al.onclick = () => { const r = game.proposePact(me, o.id, "alleanza"); afterProposal(r); };
+          row.appendChild(al);
+        }
+        if (!game.friendly(me, o.id)) {
+          const turns = htmlEl("select"); for (let t = CFG.TREGUA_MIN; t <= CFG.TREGUA_MAX; t++) { const op = htmlEl("option"); op.value = t; op.textContent = t + " turni"; turns.appendChild(op); }
+          turns.value = 3;
+          const tr = htmlEl("button", "small", "Proponi non belligeranza");
+          tr.onclick = () => { const r = game.proposePact(me, o.id, "tregua", +turns.value); afterProposal(r); };
+          row.appendChild(turns); row.appendChild(tr);
+        }
+      }
+      if (myTurn && game.allied(me, o.id)) {
+        const br = htmlEl("button", "small", "Rompi l'alleanza");
+        br.onclick = () => { const r = game.breakAlliance(me, o.id); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); openDiplomacy(); };
+        row.appendChild(br);
+      }
+      body.appendChild(row);
+    }
+    if (!myTurn) body.appendChild(htmlEl("p", "muted", "Le proposte si fanno nel tuo turno."));
+    modal("🤝 Diplomazia", body, [{ label: "Chiudi", primary: true, onClick: closeModal }]);
+  }
+  function afterProposal(r) {
+    if (!r.ok) { toast(r.msg); return; }
+    if (r.event === "pactAccepted") toast("✓ Il computer accetta la proposta.");
+    else if (r.event === "pactRefused") toast("✋ Il computer rifiuta la proposta.");
+    else toast("Proposta inviata: risponderà all'inizio del suo turno.");
+    render(); syncNet(); openDiplomacy();
+  }
+  // All'inizio del proprio turno: le proposte ricevute
+  function maybeShowOffers() {
+    if (!game || game.winner != null || !canControl() || combatCtx || !$("modal").classList.contains("hidden")) return;
+    const offers = game.offersTo(game.currentPlayer);
+    if (!offers.length) return;
+    const o = offers[0], from = game.player(o.from);
+    const body = htmlEl("div");
+    body.innerHTML = '<p><span class="dot" style="background:' + from.color + '"></span> <b>' + esc(from.name) + "</b> ti propone " +
+      (o.kind === "alleanza" ? "un'<b>alleanza</b>: niente attacchi fra voi, scambi di Ndri e materie, difesa comune." : "una <b>non belligeranza</b> per <b>" + o.turns + " turni</b>: niente attacchi fra voi.") + "</p>";
+    const answer = (acc) => { game.answerPact(o.id, acc); closeModal(); render(); syncNet(); setTimeout(maybeShowOffers, 200); };
+    modal("🤝 Proposta di " + from.name, body, [{ label: "Accetta", primary: true, onClick: () => answer(true) }, { label: "Rifiuta", onClick: () => answer(false) }]);
+  }
+  // Scambi con un alleato: doni di 5.000 Ndri o di 1 materia alla volta
+  function openTrade(other) {
+    const me = game.currentPlayer, p = game.player(me), o = game.player(other);
+    const body = htmlEl("div");
+    body.appendChild(htmlEl("p", null, "Doni a " + o.name + " (lo scambio è fatto di doni nei due sensi)."));
+    body.appendChild(htmlEl("div", "info-line", "Hai " + p.money.toLocaleString() + " Ndri · ⛽" + p.res.carburante + " · 🔩" + p.res.metallo + " · 🪨" + p.res.pietra));
+    const give = (what, qty) => { const r = game.giveToAlly(me, other, what, qty); if (!r.ok) { toast(r.msg); return; } render(); syncNet(); openTrade(other); };
+    const row = htmlEl("div", "action-grid");
+    const items = [["soldi", 5000, "💰 5.000 Ndri"], ["carburante", 1, "⛽ 1 Carburante"], ["metallo", 1, "🔩 1 Metallo"], ["pietra", 1, "🪨 1 Pietra"]];
+    for (const it of items) {
+      const b = htmlEl("button", "small", "Dai " + it[2]);
+      b.disabled = it[0] === "soldi" ? p.money < it[1] : p.res[it[0]] < it[1];
+      b.onclick = () => give(it[0], it[1]);
+      row.appendChild(b);
+    }
+    body.appendChild(row);
+    modal("🎁 Scambio con " + o.name, body, [{ label: "Chiudi", primary: true, onClick: closeModal }]);
+  }
+  // Resa: i tuoi pianeti tornano liberi, le flotte spariscono
+  function confirmSurrender() {
+    const body = htmlEl("div");
+    body.innerHTML = "<p>Vuoi davvero arrenderti? I tuoi pianeti tornano liberi (con gli edifici) e le tue flotte spariscono.</p>";
+    modal("🏳 Arrendersi?", body, [
+      { label: "🏳 Mi arrendo", primary: true, onClick: () => { const r = game.surrender(game.currentPlayer); closeModal(); if (!r.ok) { toast(r.msg); return; } sel = { fleetId: null, cellKey: null }; syncNet(); checkTurn(); } },
+      { label: "Annulla", onClick: closeModal },
+    ]);
   }
 
   // ---------------------------------------------------------------- SALVATAGGIO
@@ -2621,10 +2839,12 @@
     body.innerHTML = onlineMode
       ? "<p>Vuoi uscire dalla partita online? Verrai disconnesso dalla stanza.</p>"
       : "<p>Vuoi uscire dalla partita? Lo stato è salvato automaticamente: potrai riprenderla dal menù.</p>";
-    modal("🚪 Uscire dalla partita?", body, [
+    const acts = [
       { label: "🚪 Esci", primary: true, onClick: () => { if (!onlineMode && game) saveGame(true); try { if (window.IGNet) window.IGNet.close(); } catch (e) {} location.reload(); } },
-      { label: "Annulla", onClick: closeModal },
-    ]);
+    ];
+    if (game && canControl()) acts.push({ label: "🏳 Arrenditi", onClick: () => confirmSurrender() });
+    acts.push({ label: "Annulla", onClick: closeModal });
+    modal("🚪 Uscire dalla partita?", body, acts);
   }
 
   // ---------------------------------------------------------------- INIT
@@ -2639,6 +2859,7 @@
     $("startBtn").addEventListener("click", startGame);
     $("advanceBtn").addEventListener("click", advancePhase);
     $("helpBtn").addEventListener("click", showHelp);
+    { const db = $("diploBtn"); if (db) db.addEventListener("click", openDiplomacy); }
     { const tb = $("tutorialBtn"); if (tb) tb.addEventListener("click", () => showTutorial(0)); }
     $("confirmToggle").addEventListener("click", toggleConfirmEvents);
     updateConfirmBtn();

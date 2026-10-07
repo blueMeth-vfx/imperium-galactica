@@ -406,6 +406,8 @@ button, .hex, .fleet-badge, .step, .pill, .fc-unit { touch-action: manipulation;
 
 /* Menù difficoltà IA nel setup */
 .player-row .ai-diff { flex: 0 0 auto; width: auto; padding: 6px 8px; font-size: 17px; }
+.player-row input[type=text] { min-width: 0; }
+.player-row .race-sel { flex: 0 1 auto; width: auto; min-width: 0; max-width: 46%; padding: 6px 8px; font-size: 17px; }
 
 /* ---------- Freccia di spostamento a scomparsa ---------- */
 .move-arrow { pointer-events: none; filter: drop-shadow(0 0 5px currentColor); animation: arrowfade 1.4s ease-out forwards; }

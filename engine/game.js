@@ -1,7 +1,8 @@
 // ============================================================================
 // game.js — Motore principale: stato, setup, fasi del turno, economia,
 // produzione, movimento ed esplorazione. Logica pura (niente DOM).
-// Il combattimento è in combat.js, Casinò/Mercato/IA nei rispettivi file.
+// Il combattimento è in combat.js, Casinò/Mercato/Diplomazia/IA nei rispettivi file.
+// Regole allineate al gioco per PC/Mac (csharp/Engine).
 // ============================================================================
 (function (g) {
   g.IG = g.IG || {};
@@ -55,6 +56,11 @@
       const cfg = C();
       return cfg.SOLDI_BASE_PIANETA * cell.planet.data.economia + (cell.buildings.tesoreria || 0) * cfg.TESORERIA_BONUS;
     }
+    // Cubi in più per materia su un pianeta affine alla razza di chi lo possiede
+    planetBonus(cell) {
+      if (!cell || !cell.planet || cell.owner == null) return 0;
+      return C().raceAffinity(this.player(cell.owner).race, cell.planet.data.tipo) ? C().RACE_HOME_BONUS : 0;
+    }
 
     // -------------------------------------------------------------- setup
     _setup(playersDef) {
@@ -68,6 +74,7 @@
           name: playersDef[i].name || ("Giocatore " + (i + 1)),
           isAI: !!playersDef[i].isAI,
           difficulty: playersDef[i].difficulty || cfg.DEFAULT_DIFFICULTY,
+          race: cfg.RACES.indexOf(playersDef[i].race) >= 0 ? playersDef[i].race : cfg.RACES[i % cfg.RACES.length],
           color: cfg.COLORS[i],
           colorName: cfg.COLOR_NAMES[i],
           money: cfg.START_MONEY,
@@ -98,6 +105,12 @@
         cell.type = "space";
         cell.startOf = i;
       }
+
+      // Diplomazia, scorte dei Mercati, chi ha colpito chi (per il bottino)
+      this.pacts = []; this.pactOffers = []; this.pactSeq = 0;
+      this.marketStock = [];
+      this.lastFoe = {};
+      this.directionSet = false;
 
       // Mazzi
       this._buildTileDeck();
@@ -142,6 +155,7 @@
     }
 
     setDirection(dir) {
+      this.directionSet = true;
       this.direction = dir < 0 ? -1 : 1;
       this.turnOrder = this._computeOrder(this.startPlayer, this.direction);
       this.orderIdx = this.turnOrder.indexOf(this.currentPlayer);
@@ -214,7 +228,8 @@
         cell.builtThisTurn = false;                    // reset "1 edificio per turno"
         const pl = cell.planet.data;
         gainMoney += this.planetIncome(cell);
-        for (const m of ["carburante", "metallo", "pietra"]) gainRes[m] += 1 * pl.moltMaterie[m];
+        const bonus = this.planetBonus(cell);   // pianeta affine alla razza: +1 a ogni materia
+        for (const m of ["carburante", "metallo", "pietra"]) gainRes[m] += 1 * pl.moltMaterie[m] + bonus;
       }
       p.money += gainMoney;
       for (const m in gainRes) p.res[m] += gainRes[m];
@@ -227,7 +242,7 @@
 
     advancePhase() {
       // Passa alla fase successiva; se finite, passa al giocatore successivo.
-      if (this.winner) return;
+      if (this.winner != null) return;
       if (this.phaseIdx < PHASES.length - 1) {
         this.phaseIdx++;
         if (this.phase === "movimento") this._beginMovement();
@@ -243,13 +258,14 @@
 
     _endPlayerTurn() {
       this._checkElimination();
-      if (this.winner) return;
+      if (this.winner != null) return;
       // Casinò: i giocatori con flotte su Casinò devono giocare ogni turno (gestito a parte dalla UI/IA)
       this.orderIdx++;
       if (this.orderIdx >= this.turnOrder.length) {
         this.orderIdx = 0;
         this.turnNumber++;
         this.say("— Inizia il turno " + this.turnNumber + " —");
+        this._expirePacts();
       }
       // Salta giocatori eliminati
       let guard = 0;
@@ -257,7 +273,7 @@
         this.currentPlayer = this.turnOrder[this.orderIdx];
         if (this.player(this.currentPlayer).eliminated) {
           this.orderIdx++;
-          if (this.orderIdx >= this.turnOrder.length) { this.orderIdx = 0; this.turnNumber++; }
+          if (this.orderIdx >= this.turnOrder.length) { this.orderIdx = 0; this.turnNumber++; this._expirePacts(); }
         } else break;
       } while (guard++ < 10);
       this._beginPlayerTurn();
@@ -421,16 +437,78 @@
       // Casinò: cella comune, nessuno scontro — ci si entra liberamente
       if (cell.type === "casino") return this._enterCell(f, cell, { casino: true, revealed });
 
-      // Flotta avversaria sulla cella -> scontro spaziale
-      const enemyFleet = this.fleets.find((o) => o.q === q && o.r === r && o.owner !== f.owner);
+      // Flotta avversaria (non alleata) sulla cella -> scontro spaziale; se è la flotta del padrone del
+      // pianeta, lo difende insieme ai Cannoni: è l'attacco al pianeta
+      const enemyFleet = this.fleets.find((o) => o.q === q && o.r === r && !this.friendly(o.owner, f.owner));
+      if (enemyFleet && cell.type === "planet" && cell.owner === enemyFleet.owner && cell.owner !== f.owner)
+        return { ok: true, event: "planetCombat", attacker: f.id, q, r, revealed };
       if (enemyFleet) return { ok: true, event: "combat", attacker: f.id, defender: enemyFleet.id, q, r, revealed };
 
-      // Pianeta nemico -> combattimento (difese spaziali, poi terra)
-      if (cell.type === "planet" && cell.owner !== null && cell.owner !== f.owner) {
+      // Pianeta nemico -> combattimento (difese spaziali, poi terra), ma solo se qualcuno può fare
+      // davvero qualcosa: chi arriva può prenderlo (carri, o una Torpediniera su un pianeta senza
+      // difese a terra) oppure il pianeta spara dallo spazio (Cannoni). Se no si entra e basta.
+      if (cell.type === "planet" && cell.owner !== null && !this.friendly(cell.owner, f.owner)) {
+        if (!this.planetFightPossible(f, cell)) {
+          this.say("🛰 " + this.player(f.owner).name + " passa sopra " + cell.planet.data.nome + ": nessuno puo' combattere.");
+          const pass = this._enterCell(f, cell, { revealed });
+          pass.planetPass = true;
+          return pass;
+        }
         return { ok: true, event: "planetCombat", attacker: f.id, q, r, revealed };
       }
 
       return this._enterCell(f, cell, { revealed });
+    }
+
+    planetFightPossible(f, cell) {
+      if (cell.buildings.cannone > 0) return true;
+      if (this.fleets.some((o) => o.q === cell.q && o.r === cell.r && o.owner === cell.owner && this.fleetShipCount(o) > 0)) return true;
+      const groundDef = cell.garrison > 0 || cell.buildings.torretta > 0;
+      return f.carri > 0 || (!groundDef && f.ships.torpediniera > 0);
+    }
+
+    enemyFleetHere(f) {
+      return f ? this.fleets.find((o) => o.q === f.q && o.r === f.r && !this.friendly(o.owner, f.owner)) : null;
+    }
+
+    // Attacco sul posto: una flotta nemica è ferma nella stessa casella (per esempio su un tuo
+    // pianeta dove hai appena prodotto navi). Costa il movimento del turno. Nel Casinò no: è neutro.
+    attackHere(fleetId) {
+      const f = this.fleetById(fleetId);
+      if (!f) return { ok: false, msg: "Flotta inesistente." };
+      if (f.owner !== this.currentPlayer) return { ok: false, msg: "Non è la tua flotta." };
+      if (this.phase !== "movimento") return { ok: false, msg: "Si attacca nella fase di movimento." };
+      if (f.stepsLeft <= 0) return { ok: false, msg: "Movimento esaurito per questa flotta." };
+      const cell = this.cell(f.q, f.r);
+      if (cell && cell.type === "casino") return { ok: false, msg: "Il casinò è zona neutra: qui non si combatte." };
+      const enemy = this.enemyFleetHere(f);
+      if (!enemy) return { ok: false, msg: "Non ci sono flotte nemiche qui." };
+      return { ok: true, event: "combat", attacker: f.id, defender: enemy.id, q: f.q, r: f.r };
+    }
+
+    // Due flotte di colori diversi non stanno nella stessa casella (Casinò a parte): se succede (navi
+    // appena prodotte su un pianeta dove sta una flotta nemica), all'inizio del movimento di chi ha il
+    // turno parte subito lo scontro. null se non ce ne sono.
+    pendingClash(pid) {
+      if (this.phase !== "movimento" || this.currentPlayer !== pid) return null;
+      for (const f of this.fleetsOf(pid)) {
+        if (f.stepsLeft <= 0) continue;
+        const cell = this.cell(f.q, f.r);
+        if (!cell || cell.type === "casino") continue;
+        const enemy = this.enemyFleetHere(f);
+        if (!enemy) continue;
+        if (cell.type === "planet" && cell.owner === enemy.owner)
+          return { ok: true, event: "planetCombat", attacker: f.id, q: f.q, r: f.r };
+        return { ok: true, event: "combat", attacker: f.id, defender: enemy.id, q: f.q, r: f.r };
+      }
+      return null;
+    }
+
+    // Pianeta senza difese: niente navi del proprietario in orbita, niente Cannoni, carri o Torrette.
+    planetUndefended(cell) {
+      if (!cell || cell.owner == null) return false;
+      const fleetHere = this.fleets.some((o) => o.q === cell.q && o.r === cell.r && o.owner === cell.owner && this.fleetShipCount(o) > 0);
+      return !fleetHere && cell.buildings.cannone === 0 && cell.buildings.torretta === 0 && cell.garrison === 0;
     }
 
     // Registra uno spostamento (per frecce/banner nella UI)
@@ -444,6 +522,9 @@
     _enterCell(f, cell, info) {
       info = info || {};
       const fromQ = f.q, fromR = f.r; // partenza (per freccia e log)
+      // già nella casella (battaglia vinta sul posto): nessun passo, nessun asteroide
+      if (f.q === cell.q && f.r === cell.r)
+        return { ok: true, event: info.casino ? "casino" : "moved", fleet: f.id, q: cell.q, r: cell.r, fromQ: fromQ, fromR: fromR };
       let asteroid = null;
       // Asteroidi: si pesca una carta ad ogni attraversamento
       if (cell.type === "asteroids") {
@@ -483,13 +564,16 @@
     splitFleet(fleetId, take) {
       const f = this.fleetById(fleetId);
       if (!f) return { ok: false };
+      // i passi già fatti in questo turno valgono per entrambe le parti, ognuna con la SUA velocità
+      // (un Caccia staccato da una flotta mista che ha fatto 1 passo ne ha ancora 1, non 2)
+      const used = Math.max(0, this.fleetSpeed(f) - f.stepsLeft);
       const nf = this._newFleet(f.owner, f.q, f.r, { caccia: 0, torpediniera: 0, colonia: 0 }, 0);
       for (const t of ["caccia", "torpediniera", "colonia"]) {
         const k = Math.min(take[t] || 0, f.ships[t]); f.ships[t] -= k; nf.ships[t] += k;
       }
       const tc = Math.min(take.carri || 0, f.carri); f.carri -= tc; nf.carri += tc;
-      nf.stepsLeft = this.phase === "movimento" ? this.fleetSpeed(nf) : 0;
-      f.stepsLeft = Math.min(f.stepsLeft, this.fleetSpeed(f));
+      nf.stepsLeft = this.phase === "movimento" ? Math.max(0, this.fleetSpeed(nf) - used) : 0;
+      if (this.phase === "movimento") f.stepsLeft = Math.max(0, this.fleetSpeed(f) - used);
       if (this.fleetShipCount(f) === 0) this._destroyFleet(f);
       if (this.fleetShipCount(nf) === 0) this._destroyFleet(nf);
       return { ok: true, newFleet: nf.id };
@@ -507,8 +591,36 @@
       f.ships.colonia--;
       cell.owner = f.owner;
       cell.colonizedTurn = this.turnNumber; // potrà costruire solo dal turno successivo
+      cell.colonizedBy = f.owner;            // solo chi l'ha colonizzato può dargli un nome
       this.say(this.player(f.owner).name + " colonizza " + cell.planet.data.nome + " (Nave Colonia consumata).");
+      // i carri che la flotta non può più portare scendono sul pianeta (max per pianeta)
+      const over = Math.max(0, f.carri - this.fleetCarriCapacity(f));
+      const landed = Math.min(over, C().MAX_CARRI_PIANETA - cell.garrison);
+      if (landed > 0) { f.carri -= landed; cell.garrison += landed; this.say("  " + landed + " carri sbarcano su " + cell.planet.data.nome + "."); }
+      if (f.carri > this.fleetCarriCapacity(f)) f.carri = this.fleetCarriCapacity(f);
       if (this.fleetShipCount(f) === 0) this._destroyFleet(f);
+      return { ok: true };
+    }
+
+    // Chi ha colonizzato un pianeta con una Nave Colonia (e lo possiede ancora) gli può dare un nome.
+    canRename(pid, cell) {
+      return !!(cell && cell.planet && cell.owner === pid && cell.colonizedBy === pid);
+    }
+    renamePlanet(pid, q, r, name) {
+      const cell = this.cell(q, r);
+      if (pid !== this.currentPlayer) return { ok: false, msg: "Si rinomina nel proprio turno." };
+      if (!this.canRename(pid, cell)) return { ok: false, msg: "Solo chi ha colonizzato il pianeta (e lo possiede) può dargli un nome." };
+      const n = String(name || "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+      if (n.length < 2 || n.length > 18) return { ok: false, msg: "Il nome deve avere da 2 a 18 caratteri." };
+      for (const k in this.board) {
+        const c = this.board[k];
+        if (c !== cell && c.planet && c.planet.data.nome.toLowerCase() === n.toLowerCase()) return { ok: false, msg: "C'è già un pianeta con questo nome." };
+      }
+      const old = cell.planet.data.nome;
+      if (old === n) return { ok: true };
+      cell.customName = n;
+      cell.planet = { data: Object.assign({}, cell.planet.data, { nome: n }) };
+      this.say("✏ " + this.player(pid).name + " ribattezza " + old + " in " + n + ".");
       return { ok: true };
     }
 
@@ -519,6 +631,7 @@
       const cell = this.cell(q, r);
       const oldOwner = cell.owner;
       cell.owner = f ? f.owner : this.currentPlayer;
+      if (oldOwner != null) this.noteFoes(oldOwner, cell.owner);
       cell.garrison = survivingTanks != null ? survivingTanks : 0;
       cell.colonizedTurn = this.turnNumber; // dopo la conquista si potrà costruire solo dal turno successivo
       // Gli edifici esistenti restano al conquistatore (G19). Difese azzerate se distrutte (gestito dal combat).
@@ -528,6 +641,28 @@
     }
 
     // -------------------------------------------------------------- fine partita
+    // Resa: il giocatore esce, i suoi pianeti restano liberi (con gli edifici, conquistabili) e le
+    // sue flotte spariscono. Se era di turno, tocca al prossimo.
+    surrender(pid) {
+      const p = this.player(pid);
+      if (!p || p.eliminated || this.winner != null) return { ok: false, msg: "Non puoi arrenderti ora." };
+      for (const c of this.planetsOf(pid)) { c.owner = null; c.garrison = 0; }
+      this.fleets = this.fleets.filter((f) => f.owner !== pid);
+      p.eliminated = true; this._forgetPacts(pid);
+      this.say("🏳 " + p.name + " si arrende.");
+      if (this.casinoSessions) delete this.casinoSessions[pid];
+      this._checkElimination();
+      if (this.winner == null && this.currentPlayer === pid) this._endPlayerTurn();
+      return { ok: true };
+    }
+
+    // Chi ha colpito per ultimo ogni giocatore (pianeta preso, flotte in battaglia): a lui va il bottino
+    noteFoes(a, b) {
+      if (a == null || b == null || a < 0 || b < 0 || a === b) return;
+      if (!this.lastFoe) this.lastFoe = {};
+      this.lastFoe[a] = b; this.lastFoe[b] = a;
+    }
+
     _checkElimination() {
       for (const p of this.players) {
         if (p.eliminated) continue;
@@ -536,6 +671,17 @@
         if (noPlanets && noFleets) {
           p.eliminated = true;
           this.say("☠ " + p.name + " è stato eliminato!");
+          this._forgetPacts(p.id);
+          // Bottino: chi l'ha eliminato prende tutti i suoi Ndri e le sue materie prime
+          const k = this.lastFoe ? this.lastFoe[p.id] : undefined;
+          if (k != null && k !== p.id && this.players[k] && !this.players[k].eliminated) {
+            const kp = this.players[k], r = p.res;
+            kp.money += p.money; kp.res.carburante += r.carburante; kp.res.metallo += r.metallo; kp.res.pietra += r.pietra;
+            this.say("💰 " + kp.name + " annienta " + p.name + " e prende il bottino: " + p.money + " Ndri, " + r.carburante + " carburante, " +
+              r.metallo + " metallo, " + r.pietra + " pietra.");
+            this.loot = { from: p.id, to: k, money: p.money, res: { carburante: r.carburante, metallo: r.metallo, pietra: r.pietra } };
+          }
+          p.money = 0; p.res = { carburante: 0, metallo: 0, pietra: 0 };
         }
       }
       const alive = this.players.filter((p) => !p.eliminated);
@@ -556,6 +702,7 @@
     "asteroidDeck", "asteroidDiscard", "marketDeck", "turnOrder", "startPlayer",
     "direction", "turnNumber", "orderIdx", "phaseIdx", "currentPlayer", "winner",
     "log", "lastRiscossione", "casinoSessions", "orderRolls", "moveLog", "playSeconds",
+    "pacts", "pactOffers", "pactSeq", "marketStock", "lastFoe", "directionSet", "loot",
   ];
   Game.prototype.toState = function () {
     const o = {};
@@ -569,6 +716,14 @@
     for (const k of STATE_KEYS) g[k] = data[k];
     if (!g.log) g.log = [];
     if (!g.casinoSessions) g.casinoSessions = {};
+    // salvataggi di prima delle regole nuove
+    if (!g.pacts) g.pacts = [];
+    if (!g.pactOffers) g.pactOffers = [];
+    if (g.pactSeq == null) g.pactSeq = 0;
+    if (!g.marketStock) g.marketStock = [];
+    if (!g.lastFoe) g.lastFoe = {};
+    const cfg = C();
+    (g.players || []).forEach((p, i) => { if (cfg.RACES.indexOf(p.race) < 0) p.race = cfg.RACES[i % cfg.RACES.length]; });
     // Un RNG locale qualsiasi: la casualità è "consumata" solo da chi è di turno e
     // finisce comunque nello stato condiviso, quindi non serve sincronizzarlo.
     g.rng = makeRNG((data.turnNumber || 1) * 7919 + (data.currentPlayer || 0) + 1);

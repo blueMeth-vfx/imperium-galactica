@@ -1,5 +1,5 @@
 // ============================================================================
-// config.js — Costanti e parametri di gioco (dal manuale Imperium Galactica).
+// config.js — Costanti e parametri di gioco (allineati al gioco per PC/Mac, Voyager).
 // Nessuna dipendenza dalla UI: usabile in browser e in Node.
 // ============================================================================
 (function (g) {
@@ -20,6 +20,12 @@
     COLORS: ["#e23b3b", "#3b7de2", "#36b84a", "#e2c23b"], // rosso, blu, verde, giallo
     COLOR_NAMES: ["Rosso", "Blu", "Verde", "Giallo"],
 
+    // Razze: ognuna ha un tipo di pianeta affine, dove ogni materia prima rende 1 cubo in più per turno
+    RACES: ["pagoedonti", "antrophosi", "lithauxi", "pyrokratai"],
+    RACE_NAMES: { pagoedonti: "Pagoedonti", antrophosi: "Antrophosi", lithauxi: "Lithauxi", pyrokratai: "Pyrokratai" },
+    RACE_HOME: { antrophosi: "Terra", pagoedonti: "Ghiaccio", pyrokratai: "Fuoco", lithauxi: "Roccia" },
+    RACE_HOME_BONUS: 1,
+
     START_MONEY: 50000,
     START_FLEET: { caccia: 3, torpediniera: 0, colonia: 1 }, // 3 Caccia + 1 Nave Colonia
 
@@ -36,13 +42,13 @@
     MAX_CARRI_PIANETA: 10, // massimo di carri nella guarnigione di un pianeta
 
     // Composizione mazzo tessere (100; ~73 entrano in gioco con 4 angoli pre-rivelati)
-    TILE_DECK: { space: 47, planet: 30, asteroids: 15, market: 5, casino: 3 },
+    TILE_DECK: { space: 45, planet: 32, asteroids: 15, market: 5, casino: 3 },
 
     // --- Navi: statistiche (manuale, sezione 8) ---
     SHIPS: {
       caccia:       { att: 1, def: 1, carri: 0, carburante: 1, metallo: 1, costo: 5000,  dado: "rosso",  doppioAttacco: true },
-      torpediniera: { att: 3, def: 2, carri: 2, carburante: 3, metallo: 3, costo: 20000, dado: "giallo", doppioAttacco: false },
-      colonia:      { att: 0, def: 3, carri: 3, carburante: 5, metallo: 5, costo: 50000, dado: "verde",  doppioAttacco: false },
+      torpediniera: { att: 2, def: 2, carri: 2, carburante: 3, metallo: 3, costo: 20000, dado: "giallo", doppioAttacco: false },
+      colonia:      { att: 0.5, def: 2, carri: 3, carburante: 5, metallo: 5, costo: 50000, dado: "verde",  doppioAttacco: false },
     },
     SHIP_NAMES: { caccia: "Caccia", torpediniera: "Torpediniera", colonia: "Nave Colonia" },
 
@@ -66,11 +72,19 @@
 
     // --- Mercato (house rule prezzi cubi) ---
     PREZZO_ACQUISTO_CUBO: 2000,
-    PREZZO_VENDITA_CUBO: 1000,
+    PREZZO_VENDITA_CUBO: 500,   // vendere rende poco: 1/4 dell'acquisto
 
     // --- Casinò ---
     CASINO_PUNTATA_MIN: 1000,
+    CASINO_VINCITA: 3,          // 7 o 11: si incassa il triplo del banco
+
+    // --- Diplomazia: durata della non belligeranza (turni) ---
+    TREGUA_MIN: 1,
+    TREGUA_MAX: 10,
   };
+
+  CONFIG.raceName = (r) => CONFIG.RACE_NAMES[r] || "—";
+  CONFIG.raceAffinity = (race, tipo) => !!race && CONFIG.RACE_HOME[race] === tipo;
 
   g.IG.CONFIG = CONFIG;
 })(typeof window !== "undefined" ? window : globalThis);

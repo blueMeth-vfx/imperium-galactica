@@ -41,7 +41,7 @@
     const d1 = this.rollDie(), d2 = this.rollDie(), sum = d1 + d2;
     let outcome;
     if (sum === 7 || sum === 11) {
-      const vincita = s.banco * 2;
+      const vincita = s.banco * C().CASINO_VINCITA;   // combinazione vincente: il banco triplicato
       p.money += vincita;
       this.say("🎲 Casinò " + p.name + ": " + d1 + "+" + d2 + "=" + sum + " → VINCE! Incassa " + vincita + " Ndri.");
       s.banco = 0; outcome = "win";
